@@ -1,0 +1,17 @@
+# Environment variables
+.env
+
+# Logs
+*.log
+
+# Temp files
+tmp
+*.tmp
+
+# IDEs
+.vscode/
+.idea/
+
+# Claude
+CLAUDE.md
+claude/
