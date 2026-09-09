@@ -8,6 +8,10 @@
 tmp
 *.tmp
 
+# Python
+__pycache__/
+*.pyc
+
 # IDEs
 .vscode/
 .idea/
