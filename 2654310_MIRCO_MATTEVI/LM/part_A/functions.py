@@ -93,7 +93,7 @@ def train_and_evaluate_model(
     train_loader,
     dev_loader,
     test_loader,
-    n_epochs=100,
+    n_epochs=20,
     patience=3,
 ):
     """
