@@ -97,7 +97,7 @@ def train_and_evaluate_model(
     train_loader,
     dev_loader,
     test_loader,
-    n_epochs=20,
+    n_epochs=10,
     patience=3,
 ):
     """
@@ -213,7 +213,7 @@ def run_hyperparameter_tuning(
         f.write("\n\n[1 - hyperparameter optimization]\n")
 
     # --- d_model ---
-    for d_model in [32, 64, 128, 256, 512]:
+    for d_model in [64, 128, 256]:
         model = GPT2(
             vocab_len, pos_emb_size=1024, d_model=d_model,
             n_heads=best_n_heads, num_layers=best_num_layers, ff_dim=best_ff_dim,
@@ -233,7 +233,7 @@ def run_hyperparameter_tuning(
             best_d_model = d_model
 
     # --- n_heads (values that evenly divide the chosen d_model) ---
-    for n_heads in [2, 4, 8, 16]:
+    for n_heads in [2, 4, 8]:
         model = GPT2(
             vocab_len, pos_emb_size=1024, d_model=best_d_model,
             n_heads=n_heads, num_layers=best_num_layers, ff_dim=best_ff_dim,
@@ -253,7 +253,7 @@ def run_hyperparameter_tuning(
             best_n_heads = n_heads
 
     # --- num_layers ---
-    for num_layers in [2, 4, 6, 8]:
+    for num_layers in [2, 4, 6]:
         model = GPT2(
             vocab_len, pos_emb_size=1024, d_model=best_d_model,
             n_heads=best_n_heads, num_layers=num_layers, ff_dim=best_ff_dim,
@@ -273,7 +273,7 @@ def run_hyperparameter_tuning(
             best_num_layers = num_layers
 
     # --- ff_dim ---
-    for ff_dim in [2 * best_d_model, 4 * best_d_model, 8 * best_d_model]:
+    for ff_dim in [2 * best_d_model, 4 * best_d_model]:
         model = GPT2(
             vocab_len, pos_emb_size=1024, d_model=best_d_model,
             n_heads=best_n_heads, num_layers=best_num_layers, ff_dim=ff_dim,
