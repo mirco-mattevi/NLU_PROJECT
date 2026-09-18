@@ -2,9 +2,13 @@
 
 import copy
 import math
+import os
 import torch
 import torch.nn as nn
+import torch.optim as optim
 from tqdm import tqdm
+
+from model import GPT2
 
 
 def init_weights(mat):
@@ -148,3 +152,155 @@ def train_and_evaluate_model(
         "losses_dev": losses_dev,
     }
     return best_model, best_ppl, test_ppl, history
+
+
+def run_lr_tuning(vocab_len, lr, device, train_loader, dev_loader, test_loader, criterion_train, criterion_eval):
+    """
+    Experiment 0: trains the baseline GPT2 (d_model=20, n_heads=1, num_layers=1, ff_dim=20) with the given lr
+
+    Args:
+        vocab_len: size of the tokenizer's vocabulary.
+        lr: learning rate for the AdamW optimizer (found by sweeping it by hand).
+        device: torch device to train on.
+        train_loader, dev_loader, test_loader: DataLoaders for each split.
+        criterion_train, criterion_eval: loss functions.
+    Returns:
+        Tuple (best_model, best_ppl, test_ppl).
+    """
+    model = GPT2(vocab_len, pos_emb_size=1024, d_model=20, n_heads=1, num_layers=1, ff_dim=20).to(device)
+    model.apply(init_weights)
+    optimizer = optim.AdamW(model.parameters(), lr=lr)
+
+    best_model, best_ppl, test_ppl, _ = train_and_evaluate_model(
+        model, optimizer, criterion_train, criterion_eval, train_loader, dev_loader, test_loader
+    )
+    with open("README.md", "a") as f:
+        f.write(f"[0 - baseline, learning rate tuning] lr={lr} | dev PPL: {best_ppl:.2f} | test PPL: {test_ppl:.2f}")
+
+    torch.save(best_model.state_dict(), os.path.join("bin", f"0_lr{lr}.pt"))
+    return best_model, best_ppl, test_ppl
+
+
+def run_hyperparameter_tuning(
+    vocab_len,
+    lr,
+    device,
+    train_loader,
+    dev_loader,
+    test_loader,
+    criterion_train,
+    criterion_eval,
+):
+    """
+    Experiment 1: sequential hyperparameter tuning (d_model, n_heads, num_layers,
+    ff_dim). One hyperparameter at a time,
+
+    Args:
+        vocab_len: size of the tokenizer's vocabulary.
+        lr: learning rate for the AdamW optimizer, used for every candidate.
+        device: torch device to train on.
+        train_loader, dev_loader, test_loader: DataLoaders for each split.
+        criterion_train, criterion_eval: loss functions.
+        
+    Returns:
+        Tuple (best_model, best_ppl, test_ppl, best_config), where best_config is a
+        dict with d_model, n_heads, num_layers and ff_dim.
+    """
+    best_model, best_ppl, test_ppl = None, math.inf, math.inf
+    best_d_model, best_n_heads, best_num_layers, best_ff_dim = 20, 1, 1, 20 # baseline
+
+    with open("README.md", "a") as f:
+        f.write("\n\n[1 - hyperparameter optimization]\n")
+
+    # --- d_model ---
+    for d_model in [32, 64, 128, 256, 512]:
+        model = GPT2(
+            vocab_len, pos_emb_size=1024, d_model=d_model,
+            n_heads=best_n_heads, num_layers=best_num_layers, ff_dim=best_ff_dim,
+        ).to(device)
+        model.apply(init_weights)
+        optimizer = optim.AdamW(model.parameters(), lr=lr)
+
+        cand_model, cand_ppl, cand_test_ppl, _ = train_and_evaluate_model(
+            model, optimizer, criterion_train, criterion_eval, train_loader, dev_loader, test_loader
+        )
+        with open("README.md", "a") as f:
+            f.write(f"d_model={d_model} | dev PPL: {cand_ppl:.2f} | test PPL: {cand_test_ppl:.2f}\n")
+        torch.save(cand_model.state_dict(), os.path.join("bin", f"1_dmodel{d_model}.pt"))
+
+        if cand_ppl < best_ppl:
+            best_ppl, test_ppl, best_model = cand_ppl, cand_test_ppl, cand_model
+            best_d_model = d_model
+
+    # --- n_heads (values that evenly divide the chosen d_model) ---
+    for n_heads in [2, 4, 8, 16]:
+        model = GPT2(
+            vocab_len, pos_emb_size=1024, d_model=best_d_model,
+            n_heads=n_heads, num_layers=best_num_layers, ff_dim=best_ff_dim,
+        ).to(device)
+        model.apply(init_weights)
+        optimizer = optim.AdamW(model.parameters(), lr=lr)
+
+        cand_model, cand_ppl, cand_test_ppl, _ = train_and_evaluate_model(
+            model, optimizer, criterion_train, criterion_eval, train_loader, dev_loader, test_loader
+        )
+        with open("README.md", "a") as f:
+            f.write(f"n_heads={n_heads} | dev PPL: {cand_ppl:.2f} | test PPL: {cand_test_ppl:.2f}\n")
+        torch.save(cand_model.state_dict(), os.path.join("bin", f"1_nheads{n_heads}.pt"))
+
+        if cand_ppl < best_ppl:
+            best_ppl, test_ppl, best_model = cand_ppl, cand_test_ppl, cand_model
+            best_n_heads = n_heads
+
+    # --- num_layers ---
+    for num_layers in [2, 4, 6, 8]:
+        model = GPT2(
+            vocab_len, pos_emb_size=1024, d_model=best_d_model,
+            n_heads=best_n_heads, num_layers=num_layers, ff_dim=best_ff_dim,
+        ).to(device)
+        model.apply(init_weights)
+        optimizer = optim.AdamW(model.parameters(), lr=lr)
+
+        cand_model, cand_ppl, cand_test_ppl, _ = train_and_evaluate_model(
+            model, optimizer, criterion_train, criterion_eval, train_loader, dev_loader, test_loader
+        )
+        with open("README.md", "a") as f:
+            f.write(f"num_layers={num_layers} | dev PPL: {cand_ppl:.2f} | test PPL: {cand_test_ppl:.2f}\n")
+        torch.save(cand_model.state_dict(), os.path.join("bin", f"1_numlayers{num_layers}.pt"))
+
+        if cand_ppl < best_ppl:
+            best_ppl, test_ppl, best_model = cand_ppl, cand_test_ppl, cand_model
+            best_num_layers = num_layers
+
+    # --- ff_dim ---
+    for ff_dim in [2 * best_d_model, 4 * best_d_model, 8 * best_d_model]:
+        model = GPT2(
+            vocab_len, pos_emb_size=1024, d_model=best_d_model,
+            n_heads=best_n_heads, num_layers=best_num_layers, ff_dim=ff_dim,
+        ).to(device)
+        model.apply(init_weights)
+        optimizer = optim.AdamW(model.parameters(), lr=lr)
+
+        cand_model, cand_ppl, cand_test_ppl, _ = train_and_evaluate_model(
+            model, optimizer, criterion_train, criterion_eval, train_loader, dev_loader, test_loader
+        )
+        with open("README.md", "a") as f:
+            f.write(f"ff_dim={ff_dim} | dev PPL: {cand_ppl:.2f} | test PPL: {cand_test_ppl:.2f}\n")
+        torch.save(cand_model.state_dict(), os.path.join("bin", f"1_ffdim{ff_dim}.pt"))
+
+        if cand_ppl < best_ppl:
+            best_ppl, test_ppl, best_model = cand_ppl, cand_test_ppl, cand_model
+            best_ff_dim = ff_dim
+
+    best_config = {
+        "d_model": best_d_model, "n_heads": best_n_heads,
+        "num_layers": best_num_layers, "ff_dim": best_ff_dim,
+    }
+    with open("README.md", "a") as f:
+        f.write(
+            f"--> best after experiment 1: d_model={best_d_model} n_heads={best_n_heads} "
+            f"num_layers={best_num_layers} ff_dim={best_ff_dim} | dev PPL: {best_ppl:.2f} | test PPL: {test_ppl:.2f}\n"
+        )
+    torch.save(best_model.state_dict(), os.path.join("bin", "1_best.pt"))
+
+    return best_model, best_ppl, test_ppl, best_config
