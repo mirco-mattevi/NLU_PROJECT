@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer
-from functions import run_lr_tuning, run_hyperparameter_tuning, run_dropout_experiment
+from functions import run_lr_tuning, run_hyperparameter_tuning, run_model_with_dropout
 from utils import PennTreeBank, collate_fn, read_file
 
 if __name__ == "__main__":
@@ -50,7 +50,7 @@ if __name__ == "__main__":
     ff_dim=512
 
     # 2: dropout layers
-    best_model, best_ppl, test_ppl, history = run_dropout_experiment(
+    best_model, best_ppl, test_ppl, history = run_model_with_dropout(
         vocab_len, lr, DEVICE, train_loader, dev_loader, test_loader, criterion_train, criterion_eval,
         d_model, n_heads, num_layers, ff_dim, dropout=0.1,
     )
