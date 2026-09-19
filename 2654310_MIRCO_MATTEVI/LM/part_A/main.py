@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer
-from functions import run_lr_tuning, run_hyperparameter_tuning, run_lr_sensitivity_check
+from functions import run_lr_tuning, run_hyperparameter_tuning, run_dropout_experiment
 from utils import PennTreeBank, collate_fn, read_file
 
 if __name__ == "__main__":
@@ -31,25 +31,29 @@ if __name__ == "__main__":
     criterion_train = nn.CrossEntropyLoss(ignore_index=tokenizer.pad_token_id)
     criterion_eval = nn.CrossEntropyLoss(ignore_index=tokenizer.pad_token_id)
 
-    # 0: baseline, learning rate tuning (already run once, lr=0.001 is the winner - not rerun)
-    lr = 0.001
+    # 0: baseline, learning rate tuning
+    # for lr in [0.1, 0.05, 0.01, 0.005, 0.001, 0.0005, 0.0001]:
     # best_model, best_ppl, test_ppl = run_lr_tuning(
     #     vocab_len, lr, DEVICE, train_loader, dev_loader, test_loader, criterion_train, criterion_eval
     # )
 
-    # 1: hyperparameter tuning (d_model, n_heads, num_layers, ff_dim) (already run once - not rerun)
+    lr = 0.001
+
+    # 1: hyperparameter tuning (d_model, n_heads, num_layers, ff_dim)
     # best_model, best_ppl, test_ppl, best_config = run_hyperparameter_tuning(
     #     vocab_len, lr, DEVICE, train_loader, dev_loader, test_loader, criterion_train, criterion_eval,
     # )
 
-    # 1b: lr sensitivity spot-check - does the fixed lr=0.001 unfairly penalize the widest/
-    # deepest candidates (d_model=256, num_layers=6) of experiment 1?
-    run_lr_sensitivity_check(
-        vocab_len, DEVICE, train_loader, dev_loader, test_loader, criterion_train, criterion_eval
-    )
+    d_model=128
+    n_heads=2
+    num_layers=6
+    ff_dim=512
 
-    # ---- Experiment 2: dropout ----
-    # TODO: requires the dropout layers marked as TODO in model.py to be implemented first.
+    # 2: dropout layers
+    best_model, best_ppl, test_ppl, history = run_dropout_experiment(
+        vocab_len, lr, DEVICE, train_loader, dev_loader, test_loader, criterion_train, criterion_eval,
+        d_model, n_heads, num_layers, ff_dim, dropout=0.1,
+    )
 
     # ---- Experiment 3: weight tying ----
     # TODO: requires lm_head.weight = token_embed.weight to be set in model.py first.

@@ -167,7 +167,7 @@ def run_lr_tuning(vocab_len, lr, device, train_loader, dev_loader, test_loader, 
     Returns:
         Tuple (best_model, best_ppl, test_ppl).
     """
-    model = GPT2(vocab_len, pos_emb_size=1024, d_model=20, n_heads=1, num_layers=1, ff_dim=20).to(device)
+    model = GPT2(vocab_len, pos_emb_size=1024, d_model=20, n_heads=1, num_layers=1, ff_dim=20, dropout=0.0).to(device)
     model.apply(init_weights)
     optimizer = optim.AdamW(model.parameters(), lr=lr)
 
@@ -216,7 +216,7 @@ def run_hyperparameter_tuning(
     for d_model in [64, 128, 256]:
         model = GPT2(
             vocab_len, pos_emb_size=1024, d_model=d_model,
-            n_heads=best_n_heads, num_layers=best_num_layers, ff_dim=best_ff_dim,
+            n_heads=best_n_heads, num_layers=best_num_layers, ff_dim=best_ff_dim, dropout=0.0,
         ).to(device)
         model.apply(init_weights)
         optimizer = optim.AdamW(model.parameters(), lr=lr)
@@ -236,7 +236,7 @@ def run_hyperparameter_tuning(
     for n_heads in [2, 4, 8]:
         model = GPT2(
             vocab_len, pos_emb_size=1024, d_model=best_d_model,
-            n_heads=n_heads, num_layers=best_num_layers, ff_dim=best_ff_dim,
+            n_heads=n_heads, num_layers=best_num_layers, ff_dim=best_ff_dim, dropout=0.0,
         ).to(device)
         model.apply(init_weights)
         optimizer = optim.AdamW(model.parameters(), lr=lr)
@@ -256,7 +256,7 @@ def run_hyperparameter_tuning(
     for num_layers in [2, 4, 6]:
         model = GPT2(
             vocab_len, pos_emb_size=1024, d_model=best_d_model,
-            n_heads=best_n_heads, num_layers=num_layers, ff_dim=best_ff_dim,
+            n_heads=best_n_heads, num_layers=num_layers, ff_dim=best_ff_dim, dropout=0.0,
         ).to(device)
         model.apply(init_weights)
         optimizer = optim.AdamW(model.parameters(), lr=lr)
@@ -276,7 +276,7 @@ def run_hyperparameter_tuning(
     for ff_dim in [2 * best_d_model, 4 * best_d_model]:
         model = GPT2(
             vocab_len, pos_emb_size=1024, d_model=best_d_model,
-            n_heads=best_n_heads, num_layers=best_num_layers, ff_dim=ff_dim,
+            n_heads=best_n_heads, num_layers=best_num_layers, ff_dim=ff_dim, dropout=0.0,
         ).to(device)
         model.apply(init_weights)
         optimizer = optim.AdamW(model.parameters(), lr=lr)
@@ -306,53 +306,37 @@ def run_hyperparameter_tuning(
     return best_model, best_ppl, test_ppl, best_config
 
 
-def run_lr_sensitivity_check(vocab_len, device, train_loader, dev_loader, test_loader, criterion_train, criterion_eval):
+def run_model_with_dropout(
+    vocab_len, lr, device, train_loader, dev_loader, test_loader, criterion_train, criterion_eval,
+    d_model, n_heads, num_layers, ff_dim, dropout=0.1,
+):
     """
-    Experiment 1b: spot-checks whether the lr=0.001 used for every candidate in experiment 1
-    unfairly penalized d_model=256 (lost to d_model=128, dev PPL 45.51) and whether a lower lr
-    can still improve num_layers=6 (already the round winner at lr=0.001, dev PPL 41.74).
-    n_epochs and patience are left unchanged, so lr is the only variable that differs.
+    Experiment 2: retrains the experiment 1 champion config with dropout enabled (embeddings,
+    attention weights, attention output projection, feed-forward output).
 
     Args:
         vocab_len: size of the tokenizer's vocabulary.
+        lr: learning rate for the AdamW optimizer.
         device: torch device to train on.
         train_loader, dev_loader, test_loader: DataLoaders for each split.
         criterion_train, criterion_eval: loss functions.
+        d_model, n_heads, num_layers, ff_dim: trained hyperparameters.
+        dropout: dropout probability applied in all 4 positions.
+    Returns:
+        Tuple (best_model, best_ppl, test_ppl, history).
     """
-    LOWER_LR = 0.0005
-    checks = [
-        {
-            "label": "d_model=256 (n_heads=1, num_layers=1, ff_dim=20)",
-            "config": dict(d_model=256, n_heads=1, num_layers=1, ff_dim=20),
-            "reference_ppl": 45.51,
-            "reference_label": "round winner at lr=0.001, d_model=128",
-        },
-        {
-            "label": "num_layers=6 (d_model=128, n_heads=2, ff_dim=20)",
-            "config": dict(d_model=128, n_heads=2, num_layers=6, ff_dim=20),
-            "reference_ppl": 41.74,
-            "reference_label": "round winner at lr=0.001, num_layers=6 itself",
-        },
-    ]
+    model = GPT2(
+        vocab_len, pos_emb_size=1024, d_model=d_model,
+        n_heads=n_heads, num_layers=num_layers, ff_dim=ff_dim, dropout=dropout,
+    ).to(device)
+    model.apply(init_weights)
+    optimizer = optim.AdamW(model.parameters(), lr=lr)
 
+    best_model, best_ppl, test_ppl, history = train_and_evaluate_model(
+        model, optimizer, criterion_train, criterion_eval, train_loader, dev_loader, test_loader
+    )
     with open("README.md", "a") as f:
-        f.write(f"\n\n[1b - lr sensitivity spot-check (lr=0.001 vs lr={LOWER_LR})]\n")
+        f.write(f"\n\n[2 - dropout layers] dropout={dropout} | dev PPL: {best_ppl:.2f} | test PPL: {test_ppl:.2f}\n")
 
-    for check in checks:
-        model = GPT2(vocab_len, pos_emb_size=1024, **check["config"]).to(device)
-        model.apply(init_weights)
-        optimizer = optim.AdamW(model.parameters(), lr=LOWER_LR)
-
-        cand_model, cand_ppl, cand_test_ppl, _ = train_and_evaluate_model(
-            model, optimizer, criterion_train, criterion_eval, train_loader, dev_loader, test_loader
-        )
-
-        verdict = "IMPROVES on the lr=0.001 reference" if cand_ppl < check["reference_ppl"] else "does NOT improve on the lr=0.001 reference"
-        with open("README.md", "a") as f:
-            f.write(
-                f"{check['label']} | lr={LOWER_LR} | dev PPL: {cand_ppl:.2f} | test PPL: {cand_test_ppl:.2f} "
-                f"({check['reference_label']}: {check['reference_ppl']:.2f}) -> {verdict}\n"
-            )
-
-        config_tag = "_".join(f"{k}{v}" for k, v in check["config"].items())
-        torch.save(cand_model.state_dict(), os.path.join("bin", f"1b_{config_tag}_lr{LOWER_LR}.pt"))
+    torch.save(best_model.state_dict(), os.path.join("bin", f"2_dropout{dropout}.pt"))
+    return best_model, best_ppl, test_ppl, history

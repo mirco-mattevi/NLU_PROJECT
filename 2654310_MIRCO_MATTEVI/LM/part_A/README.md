@@ -26,3 +26,9 @@ ff_dim=256 | dev PPL: 40.21 | test PPL: 36.23
 ff_dim=512 | dev PPL: 39.58 | test PPL: 36.04
 
 --> best after experiment 1: d_model=128 n_heads=2 num_layers=6 ff_dim=512 | dev PPL: 39.58 | test PPL: 36.04
+
+**[1b - lr sensitivity spot-check (lr=0.001 vs lr=0.0005)]**
+
+d_model=256 (n_heads=1, num_layers=1, ff_dim=20) | lr=0.0005 | dev PPL: 48.33 | test PPL: 42.92 (round winner at lr=0.001, d_model=128: 45.51) -> does NOT improve on the lr=0.001 reference
+
+num_layers=6 (d_model=128, n_heads=2, ff_dim=20) | lr=0.0005 | dev PPL: 45.54 | test PPL: 40.64 (round winner at lr=0.001, num_layers=6 itself: 41.74) -> does NOT improve on the lr=0.001 reference

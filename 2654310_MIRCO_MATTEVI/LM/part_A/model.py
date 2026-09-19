@@ -27,11 +27,9 @@ class MultiHeadAttention(nn.Module):
         self.w_k = nn.Linear(d_model, d_model)
         self.w_v = nn.Linear(d_model, d_model)
         self.out_proj = nn.Linear(d_model, d_model)
-        
-        # TODO (exercise 1.A.2): self.attn_dropout = nn.Dropout(dropout), applied
-        # to `attn` right after the softmax.
-        # TODO (exercise 1.A.2): self.proj_dropout = nn.Dropout(dropout), applied
-        # to `y` right after self.out_proj.
+
+        self.attn_dropout = nn.Dropout(dropout) # applied to `attn` right after the softmax
+        self.proj_dropout = nn.Dropout(dropout) # applied to `y` right after self.out_proj
 
     def forward(self, x, mask):
         """
@@ -43,9 +41,9 @@ class MultiHeadAttention(nn.Module):
         """
         B, L, d_model = x.size()
 
-        q = self.w_q(x)  # (B, L, d_model)
-        k = self.w_k(x)  # (B, L, d_model)
-        v = self.w_v(x)  # (B, L, d_model)
+        q = self.w_q(x) # (B, L, d_model)
+        k = self.w_k(x) # (B, L, d_model)
+        v = self.w_v(x) # (B, L, d_model)
 
         # split into heads, reshape to (B, n_heads, L, h_dim)
         q = q.view(B, L, self.n_heads, self.h_dim).transpose(1, 2)
@@ -62,13 +60,13 @@ class MultiHeadAttention(nn.Module):
 
         # convert to probability for each token over every head
         attn = F.softmax(similarity, dim=-1)
-        # TODO (exercise 1.A.2): attn = self.attn_dropout(attn)
+        attn = self.attn_dropout(attn) # apply dropout
 
         # compute the weighted (according to attention prob.) sum of values for each token, for each head
         y = attn @ v
         y = y.transpose(1, 2).contiguous().view(B, L, d_model) # concatenate heads
         y = self.out_proj(y) # mix the heads back together
-        # TODO (exercise 1.A.2): y = self.proj_dropout(y)
+        y = self.proj_dropout(y)
 
         return y
 
@@ -89,7 +87,7 @@ class FeedForward(nn.Module):
             nn.Linear(d_model, hidden_dim), # higher dimensional projection
             nn.GELU(),
             nn.Linear(hidden_dim, d_model), # back to original dimension
-            # TODO (exercise 1.A.2): nn.Dropout(dropout) as the last layer here.
+            nn.Dropout(dropout),
         )
 
     def forward(self, x):
@@ -152,7 +150,7 @@ class GPT2(nn.Module):
         self.pos_emb_size = pos_emb_size
         self.token_embed = nn.Embedding(vocab_size, d_model)
         self.pos_embed = nn.Embedding(pos_emb_size, d_model)
-        # TODO (exercise 1.A.2): self.embed_dropout = nn.Dropout(dropout)
+        self.embed_dropout = nn.Dropout(dropout)
 
         # create a stack of transformer blocks
         self.blocks = nn.ModuleList([
@@ -183,7 +181,7 @@ class GPT2(nn.Module):
         # embed the tokens and their positions
         pos = torch.arange(L, device=idx.device)
         x = self.token_embed(idx) + self.pos_embed(pos)
-        # TODO (exercise 1.A.2): x = self.embed_dropout(x)
+        x = self.embed_dropout(x)
 
         mask = self.mask[:, :, :L, :L]
 
