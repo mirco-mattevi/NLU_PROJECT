@@ -304,3 +304,55 @@ def run_hyperparameter_tuning(
     torch.save(best_model.state_dict(), os.path.join("bin", "1_best.pt"))
 
     return best_model, best_ppl, test_ppl, best_config
+
+
+def run_lr_sensitivity_check(vocab_len, device, train_loader, dev_loader, test_loader, criterion_train, criterion_eval):
+    """
+    Experiment 1b: spot-checks whether the lr=0.001 used for every candidate in experiment 1
+    unfairly penalized d_model=256 (lost to d_model=128, dev PPL 45.51) and whether a lower lr
+    can still improve num_layers=6 (already the round winner at lr=0.001, dev PPL 41.74).
+    n_epochs and patience are left unchanged, so lr is the only variable that differs.
+
+    Args:
+        vocab_len: size of the tokenizer's vocabulary.
+        device: torch device to train on.
+        train_loader, dev_loader, test_loader: DataLoaders for each split.
+        criterion_train, criterion_eval: loss functions.
+    """
+    LOWER_LR = 0.0005
+    checks = [
+        {
+            "label": "d_model=256 (n_heads=1, num_layers=1, ff_dim=20)",
+            "config": dict(d_model=256, n_heads=1, num_layers=1, ff_dim=20),
+            "reference_ppl": 45.51,
+            "reference_label": "round winner at lr=0.001, d_model=128",
+        },
+        {
+            "label": "num_layers=6 (d_model=128, n_heads=2, ff_dim=20)",
+            "config": dict(d_model=128, n_heads=2, num_layers=6, ff_dim=20),
+            "reference_ppl": 41.74,
+            "reference_label": "round winner at lr=0.001, num_layers=6 itself",
+        },
+    ]
+
+    with open("README.md", "a") as f:
+        f.write(f"\n\n[1b - lr sensitivity spot-check (lr=0.001 vs lr={LOWER_LR})]\n")
+
+    for check in checks:
+        model = GPT2(vocab_len, pos_emb_size=1024, **check["config"]).to(device)
+        model.apply(init_weights)
+        optimizer = optim.AdamW(model.parameters(), lr=LOWER_LR)
+
+        cand_model, cand_ppl, cand_test_ppl, _ = train_and_evaluate_model(
+            model, optimizer, criterion_train, criterion_eval, train_loader, dev_loader, test_loader
+        )
+
+        verdict = "IMPROVES on the lr=0.001 reference" if cand_ppl < check["reference_ppl"] else "does NOT improve on the lr=0.001 reference"
+        with open("README.md", "a") as f:
+            f.write(
+                f"{check['label']} | lr={LOWER_LR} | dev PPL: {cand_ppl:.2f} | test PPL: {cand_test_ppl:.2f} "
+                f"({check['reference_label']}: {check['reference_ppl']:.2f}) -> {verdict}\n"
+            )
+
+        config_tag = "_".join(f"{k}{v}" for k, v in check["config"].items())
+        torch.save(cand_model.state_dict(), os.path.join("bin", f"1b_{config_tag}_lr{LOWER_LR}.pt"))

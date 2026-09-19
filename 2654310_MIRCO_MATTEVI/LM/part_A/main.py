@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer
-from functions import run_lr_tuning, run_hyperparameter_tuning
+from functions import run_lr_tuning, run_hyperparameter_tuning, run_lr_sensitivity_check
 from utils import PennTreeBank, collate_fn, read_file
 
 if __name__ == "__main__":
@@ -37,9 +37,15 @@ if __name__ == "__main__":
     #     vocab_len, lr, DEVICE, train_loader, dev_loader, test_loader, criterion_train, criterion_eval
     # )
 
-    # 1: hyperparameter tuning (d_model, n_heads, num_layers, ff_dim)
-    best_model, best_ppl, test_ppl, best_config = run_hyperparameter_tuning(
-        vocab_len, lr, DEVICE, train_loader, dev_loader, test_loader, criterion_train, criterion_eval,
+    # 1: hyperparameter tuning (d_model, n_heads, num_layers, ff_dim) (already run once - not rerun)
+    # best_model, best_ppl, test_ppl, best_config = run_hyperparameter_tuning(
+    #     vocab_len, lr, DEVICE, train_loader, dev_loader, test_loader, criterion_train, criterion_eval,
+    # )
+
+    # 1b: lr sensitivity spot-check - does the fixed lr=0.001 unfairly penalize the widest/
+    # deepest candidates (d_model=256, num_layers=6) of experiment 1?
+    run_lr_sensitivity_check(
+        vocab_len, DEVICE, train_loader, dev_loader, test_loader, criterion_train, criterion_eval
     )
 
     # ---- Experiment 2: dropout ----
