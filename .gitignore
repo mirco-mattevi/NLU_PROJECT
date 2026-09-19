@@ -23,6 +23,3 @@ claude/
 # Kaggle
 kaggle/
 kaggle_output/
-
-# Model checkpoints (too large for GitHub, kept locally/on Kaggle only)
-bin/
