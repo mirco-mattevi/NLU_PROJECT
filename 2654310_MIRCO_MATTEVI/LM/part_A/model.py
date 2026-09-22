@@ -160,7 +160,8 @@ class GPT2(nn.Module):
 
         self.ln_f = nn.LayerNorm(d_model)
         self.lm_head = nn.Linear(d_model, vocab_size)
-        # TODO (exercise 1.A.3, weight tying): self.lm_head.weight = self.token_embed.weight
+        # weight tying: the same embedding matrix is used for input and output (same size)
+        self.lm_head.weight = self.token_embed.weight 
 
         # causal mask: each token cannot see future tokens
         mask = torch.tril(torch.ones(pos_emb_size, pos_emb_size)).unsqueeze(0).unsqueeze(0)

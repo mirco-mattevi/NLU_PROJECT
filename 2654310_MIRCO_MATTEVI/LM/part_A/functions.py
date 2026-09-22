@@ -156,7 +156,7 @@ def train_and_evaluate_model(
 
 def run_lr_tuning(vocab_len, lr, device, train_loader, dev_loader, test_loader, criterion_train, criterion_eval):
     """
-    Experiment 0: trains the baseline GPT2 (d_model=20, n_heads=1, num_layers=1, ff_dim=20) with the given lr
+    0: trains the baseline GPT2 (d_model=20, n_heads=1, num_layers=1, ff_dim=20) with the given lr
 
     Args:
         vocab_len: size of the tokenizer's vocabulary.
@@ -192,7 +192,7 @@ def run_hyperparameter_tuning(
     criterion_eval,
 ):
     """
-    Experiment 1: sequential hyperparameter tuning (d_model, n_heads, num_layers,
+    1: sequential hyperparameter tuning (d_model, n_heads, num_layers,
     ff_dim). One hyperparameter at a time,
 
     Args:
@@ -311,7 +311,7 @@ def run_model_with_dropout(
     d_model, n_heads, num_layers, ff_dim, dropout=0.1,
 ):
     """
-    Experiment 2: retrains the experiment 1 champion config with dropout enabled (embeddings,
+    2: retrains the experiment 1 champion config with dropout enabled (embeddings,
     attention weights, attention output projection, feed-forward output).
 
     Args:
@@ -339,4 +339,39 @@ def run_model_with_dropout(
         f.write(f"\n\n[2 - dropout layers] dropout={dropout} | dev PPL: {best_ppl:.2f} | test PPL: {test_ppl:.2f}\n")
 
     torch.save(best_model.state_dict(), os.path.join("bin", f"2_dropout{dropout}.pt"))
+    return best_model, best_ppl, test_ppl, history
+
+
+def run_model_with_weight_tying(
+    vocab_len, lr, device, train_loader, dev_loader, test_loader, criterion_train, criterion_eval,
+    d_model, n_heads, num_layers, ff_dim, dropout,
+):
+    """
+    Experiment 3: retrains the experiment 2 champion config with weight tying enabled
+    (lm_head.weight shares the same tensor as token_embed.weight).
+
+    Args:
+        vocab_len: size of the tokenizer's vocabulary.
+        lr: learning rate for the AdamW optimizer.
+        device: torch device to train on.
+        train_loader, dev_loader, test_loader: DataLoaders for each split.
+        criterion_train, criterion_eval: loss functions.
+        d_model, n_heads, num_layers, ff_dim, dropout: trained hyperparameters.
+    Returns:
+        Tuple (best_model, best_ppl, test_ppl, history).
+    """
+    model = GPT2(
+        vocab_len, pos_emb_size=1024, d_model=d_model,
+        n_heads=n_heads, num_layers=num_layers, ff_dim=ff_dim, dropout=dropout,
+    ).to(device)
+    model.apply(init_weights)
+    optimizer = optim.AdamW(model.parameters(), lr=lr)
+
+    best_model, best_ppl, test_ppl, history = train_and_evaluate_model(
+        model, optimizer, criterion_train, criterion_eval, train_loader, dev_loader, test_loader
+    )
+    with open("README.md", "a") as f:
+        f.write(f"\n\n[3 - weight tying] dev PPL: {best_ppl:.2f} | test PPL: {test_ppl:.2f}\n")
+
+    torch.save(best_model.state_dict(), os.path.join("bin", "3_weight_tying.pt"))
     return best_model, best_ppl, test_ppl, history
