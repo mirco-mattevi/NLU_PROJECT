@@ -36,3 +36,7 @@ num_layers=6 (d_model=128, n_heads=2, ff_dim=20) | lr=0.0005 | dev PPL: 45.54 | 
 **[2 - dropout layers]**
 
 dropout=0.1 | dev PPL: 36.13 | test PPL: 32.83
+
+**[3 - weight tying]**
+
+dev PPL: 33.59 | test PPL: 30.14

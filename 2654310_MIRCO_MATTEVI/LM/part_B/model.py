@@ -1,23 +1,21 @@
-# LoRA-adapted GPT2 for Part 1.B, adapted from LAB 04.
-# GPT2_LoRA starts from the pretrained openai-community/gpt2 weights and
-# should only expose the LoRA adapter parameters as trainable (see
-# functions.py: prepare_optimizer).
+# LoRA-adapted GPT2, starts from the pretrained huggingface GPT2 model
 
 from typing import Optional, Tuple, Union
-
 import torch
 from transformers import GPT2LMHeadModel
 from transformers.models.gpt2.modeling_gpt2 import GPT2Attention
 
 
 class CustomGPT2Attention(GPT2Attention):
-    """GPT2Attention with LoRA adapters on the query/key/value projections."""
+    """
+    GPT2Attention with LoRA adapters on the query/key/value projections.
+    """
 
     def __init__(self, config, rank, alpha):
         """
         Args:
-            config: the GPT2 model config (same one used by the original attention layer).
-            rank: LoRA rank (size of the low-rank bottleneck).
+            config: the GPT2 model config.
+            rank: LoRA rank.
             alpha: LoRA scaling factor.
         """
         super().__init__(config)
@@ -25,8 +23,6 @@ class CustomGPT2Attention(GPT2Attention):
         # of matrices A, B applied to self.c_attn's query/key/value output,
         # scaled by alpha / rank).
 
-    # Forward is copied unmodified from transformers 4.38.0's GPT2Attention:
-    # https://github.com/huggingface/transformers/blob/v4.38.0/src/transformers/models/gpt2/modeling_gpt2.py
     # TODO (exercise 1.B): edit this method to add the LoRA delta to
     # query/key/value before they are split into heads.
     def forward(
@@ -51,8 +47,10 @@ class CustomGPT2Attention(GPT2Attention):
             key, value = self.c_attn(encoder_hidden_states).split(self.split_size, dim=2)
             attention_mask = encoder_attention_mask
         else:
+            # Q,K,V projections fused into one (faster) and then split into the 3
             query, key, value = self.c_attn(hidden_states).split(self.split_size, dim=2)
 
+        # split into heads
         query = self._split_heads(query, self.num_heads, self.head_dim)
         key = self._split_heads(key, self.num_heads, self.head_dim)
         value = self._split_heads(value, self.num_heads, self.head_dim)
@@ -70,8 +68,10 @@ class CustomGPT2Attention(GPT2Attention):
         if self.reorder_and_upcast_attn:
             attn_output, attn_weights = self._upcast_and_reordered_attn(query, key, value, attention_mask, head_mask)
         else:
+            # retrieve the contextualized representation of each token
             attn_output, attn_weights = self._attn(query, key, value, attention_mask, head_mask)
 
+        # concat heads, mix info in the projected layer, add dropout
         attn_output = self._merge_heads(attn_output, self.num_heads, self.head_dim)
         attn_output = self.c_proj(attn_output)
         attn_output = self.resid_dropout(attn_output)
@@ -84,13 +84,15 @@ class CustomGPT2Attention(GPT2Attention):
 
 
 class GPT2_LoRA(GPT2LMHeadModel):
-    """Pretrained GPT2LMHeadModel with every attention block's c_attn wrapped by LoRA."""
+    """
+    Pretrained GPT2LMHeadModel with every attention block's wrapped by LoRA.
+    """
 
     def __init__(self, *model_args, rank, alpha, **model_kwargs):
         """
         Args:
-            rank: LoRA rank, forwarded to every CustomGPT2Attention.
-            alpha: LoRA scaling factor, forwarded to every CustomGPT2Attention.
+            rank: LoRA rank.
+            alpha: LoRA scaling factor.
         """
         super().__init__(*model_args, **model_kwargs)
         for block in self.transformer.h:

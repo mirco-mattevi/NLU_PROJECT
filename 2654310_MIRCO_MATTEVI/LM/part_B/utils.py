@@ -1,6 +1,4 @@
-# Data loading and preprocessing for the PennTreeBank language modeling dataset.
-# Identical pipeline to LM/part_A: the LoRA fine-tuning experiment reuses the
-# same tokenizer and data so its PPL is directly comparable to Part 1.A's.
+# Data loading and preprocessing for the PennTreeBank dataset.
 
 import torch
 import torch.utils.data as data
@@ -24,6 +22,7 @@ def read_file(path, eos_token="<eos>"):
 
 
 class PennTreeBank(data.Dataset):
+
     """Wraps a list of raw sentences as a PyTorch Dataset."""
 
     def __init__(self, corpus):
@@ -38,21 +37,24 @@ class PennTreeBank(data.Dataset):
 
 def collate_fn(batch, tokenizer, device):
     """
-    Tokenizes a batch of sentences and builds next-token-prediction pairs.
+    Converts a batch of sentences into tokenized tensors and builds next-token-prediction pairs.
 
     Args:
         batch: list of raw sentence strings.
-        tokenizer: HuggingFace tokenizer (padding enabled, pad_token set).
+        tokenizer: HuggingFace GPT-2 tokenizer.
         device: torch device to move the tensors to.
     Returns:
         Tuple (input_ids, labels, n_tokens), where n_tokens is the number of
         non-pad tokens in the batch (used to average the loss correctly).
     """
-    tokenized = tokenizer(batch, padding=True, return_tensors="pt")
+    # out = tensor of shape (Batch size, Max length)
+    tokenized = tokenizer(batch, padding=True, return_tensors="pt") # padding to have the same length in the batch
 
-    input_ids = tokenized.input_ids[:, :-1].detach().clone().to(device)
-    labels = tokenized.input_ids[:, 1:].detach().clone().to(device)
+    # build next token prediction pairs
+    input_ids = tokenized.input_ids[:, :-1].detach().clone().to(device) # every token except the last one
+    labels = tokenized.input_ids[:, 1:].detach().clone().to(device) # every token except the first one (left shifted --> predict the next)
 
+    # store the number of non-pad tokens
     n_tokens = torch.sum(input_ids != tokenizer.pad_token_id)
 
     return input_ids, labels, n_tokens
