@@ -77,7 +77,7 @@ def eval_loop(data, eval_criterion, model):
 
     with torch.no_grad():
         for input_ids, labels, n_tokens in tqdm(data, desc="Evaluating: ", unit="batch", total=len(data)):
-            output = model(input_ids)
+            output = model(input_ids) # forward pass
             loss = eval_criterion(output.permute(0, 2, 1), labels)
             # from avg loss to total loss (batches may have different number of tokens, ex. for padding)
             # we want to compute the avg loss of the epoch correctly
