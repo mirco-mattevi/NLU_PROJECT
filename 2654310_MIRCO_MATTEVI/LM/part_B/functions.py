@@ -63,13 +63,16 @@ def prepare_optimizer(model, lr):
         AdamW optimizer over the trainable (LoRA) parameters only.
     """
     for param in model.parameters():
-        # TODO (exercise 1.B): freeze every parameter by default.
-        # param.requires_grad = False
-        pass
+        # freeze every parameter by default
+        param.requires_grad = False
+
     for module in model.modules():
-        # TODO (exercise 1.B): make only the LoRA adapter parameters trainable,
-        # e.g. `if hasattr(module, "lora_A"): ... param.requires_grad = True`.
-        pass
+        # make only the LoRA parameters trainable
+        if hasattr(module, "lora_A"): # it has also LoRA_B
+            for param in module.lora_A.parameters():
+                param.requires_grad = True
+            for param in module.lora_B.parameters():
+                param.requires_grad = True
 
     optimizer = optim.AdamW(
         (p for p in model.parameters() if p.requires_grad),

@@ -26,21 +26,19 @@ if __name__ == "__main__":
     dev_loader = DataLoader(dev_dataset, batch_size=16, collate_fn=collate)
     test_loader = DataLoader(test_dataset, batch_size=16, collate_fn=collate)
 
-    # Requirement: test PPL must be < 250 and lower than Part 1.A's best.
-
     # 0: learning rate tuning (rank=8, alpha=16 fixed)
     best_model, best_ppl, test_ppl, lr = run_lr_tuning(
         [1e-4, 3e-4, 1e-3], 8, 16, DEVICE, train_loader, dev_loader, test_loader
     )
 
     # 1: rank tuning (alpha = 2 * rank)
-    best_model, best_ppl, test_ppl, rank = run_rank_tuning(
-        [4, 8, 16, 32], lr, DEVICE, train_loader, dev_loader, test_loader
-    )
+    # best_model, best_ppl, test_ppl, rank = run_rank_tuning(
+    #     [4, 8, 16, 32], lr, DEVICE, train_loader, dev_loader, test_loader
+    # )
 
     # 2: alpha tuning
-    best_model, best_ppl, test_ppl, alpha = run_alpha_tuning(
-        [rank, 2 * rank, 4 * rank], rank, lr, DEVICE, train_loader, dev_loader, test_loader
-    )
+    # best_model, best_ppl, test_ppl, alpha = run_alpha_tuning(
+    #     [rank, 2 * rank, 4 * rank], rank, lr, DEVICE, train_loader, dev_loader, test_loader
+    # )
 
-    print(f"[LoRA] best: lr={lr} rank={rank} alpha={alpha} | dev PPL: {best_ppl:.2f} | test PPL: {test_ppl:.2f}")
+    # print(f"[LoRA] best: lr={lr} rank={rank} alpha={alpha} | dev PPL: {best_ppl:.2f} | test PPL: {test_ppl:.2f}")

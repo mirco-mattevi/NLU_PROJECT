@@ -2,6 +2,7 @@
 
 from typing import Optional, Tuple, Union
 import torch
+import torch.nn as nn
 from transformers import GPT2LMHeadModel
 from transformers.models.gpt2.modeling_gpt2 import GPT2Attention
 
@@ -19,12 +20,21 @@ class CustomGPT2Attention(GPT2Attention):
             alpha: LoRA scaling factor.
         """
         super().__init__(config)
-        # TODO (exercise 1.B): add the LoRA low-rank matrices here (e.g. a pair
-        # of matrices A, B applied to self.c_attn's query/key/value output,
-        # scaled by alpha / rank).
 
-    # TODO (exercise 1.B): edit this method to add the LoRA delta to
-    # query/key/value before they are split into heads.
+        # LoRA adapters: W x + (alpha / rank) * x A B
+        # A is random Gaussian (same as GPT2 weights distribution (std = config.initializer_range))
+        self.lora_A = nn.ParameterDict({
+            name: nn.Parameter(torch.randn(self.embed_dim, rank) * config.initializer_range) for name in ("q", "k", "v")
+        })
+
+        # B is zero --> adapted model starts exactly as the pretrained one.
+        self.lora_B = nn.ParameterDict({
+            name: nn.Parameter(torch.zeros(rank, self.embed_dim)) for name in ("q", "k", "v")
+        })
+
+        self.scaling = alpha / rank # scaling factor for the LoRA update
+
+    # forward step with the LoRA update added to query/key/value
     def forward(
         self,
         hidden_states: Optional[Tuple[torch.FloatTensor]],
@@ -49,6 +59,10 @@ class CustomGPT2Attention(GPT2Attention):
         else:
             # Q,K,V projections fused into one (faster) and then split into the 3
             query, key, value = self.c_attn(hidden_states).split(self.split_size, dim=2)
+            # add the LoRA low-rank update (x A B) * alpha / rank to the frozen projections
+            query = query + (hidden_states @ self.lora_A["q"] @ self.lora_B["q"]) * self.scaling
+            key = key + (hidden_states @ self.lora_A["k"] @ self.lora_B["k"]) * self.scaling
+            value = value + (hidden_states @ self.lora_A["v"] @ self.lora_B["v"]) * self.scaling
 
         # split into heads
         query = self._split_heads(query, self.num_heads, self.head_dim)
@@ -95,11 +109,12 @@ class GPT2_LoRA(GPT2LMHeadModel):
             alpha: LoRA scaling factor.
         """
         super().__init__(*model_args, **model_kwargs)
+        
         for block in self.transformer.h:
-            # TODO (exercise 1.B): replace block.attn with
-            # CustomGPT2Attention(self.config, rank, alpha), then copy over the
-            # pretrained weights with block.attn.load_state_dict(..., strict=False).
-            pass
+            # replace the attention with the LoRA one, keeping the original weights
+            pretrained_attn = block.attn
+            block.attn = CustomGPT2Attention(self.config, rank, alpha)
+            block.attn.load_state_dict(pretrained_attn.state_dict(), strict=False) # strict=False: skip the new LoRA parameters
 
     def forward(self, *args, **kwargs):
         return super().forward(*args, **kwargs)
