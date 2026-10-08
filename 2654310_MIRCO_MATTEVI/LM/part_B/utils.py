@@ -44,15 +44,19 @@ def collate_fn(batch, tokenizer, device):
         tokenizer: HuggingFace GPT-2 tokenizer.
         device: torch device to move the tensors to.
     Returns:
-        Tuple (input_ids, labels, n_tokens), where n_tokens is the number of
-        non-pad tokens in the batch (used to average the loss correctly).
+        Tuple (input_ids, labels, n_tokens), where labels are the input_ids with the
+        pad tokens set to -100, and n_tokens is the number of non-pad tokens in the
+        batch (used to average the loss correctly).
     """
     # out = tensor of shape (Batch size, Max length)
     tokenized = tokenizer(batch, padding=True, return_tensors="pt") # padding to have the same length in the batch
 
-    # build next token prediction pairs
     input_ids = tokenized.input_ids[:, :-1].detach().clone().to(device) # every token except the last one
-    labels = tokenized.input_ids[:, 1:].detach().clone().to(device) # every token except the first one (left shifted --> predict the next)
+    # we don't shift the labels to the left, the model manages it internally
+    labels = input_ids.clone()
+    # we cannot specify ignore_index, so we replace our pad tokens with -100
+    # -100 is ignored by default when the model computes the loss
+    labels[labels == tokenizer.pad_token_id] = -100
 
     # store the number of non-pad tokens
     n_tokens = torch.sum(input_ids != tokenizer.pad_token_id)

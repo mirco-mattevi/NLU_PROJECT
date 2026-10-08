@@ -100,7 +100,7 @@ def train_loop(data, optimizer, model):
     pbar = tqdm(data, desc="Training:", unit="batch", total=len(data))
     for i, (input_ids, labels, n_tokens) in enumerate(pbar):
         optimizer.zero_grad() # zero the gradient so that it doesn't accumulate across batches
-        output = model(input_ids, labels=input_ids) # forward pass (loss is computed by the model)
+        output = model(input_ids, labels=labels) # forward pass (loss is computed by the model, pad ignored)
         # from avg loss to total loss (batches may have different number of tokens, ex. for padding)
         # we want to compute the avg loss of the epoch correctly
         loss_array.append(output.loss.item() * n_tokens)
@@ -125,12 +125,13 @@ def eval_loop(data, model):
         Tuple (perplexity, token-weighted average loss).
     """
     model.eval()
+    loss_to_return = []
     loss_array = []
     number_of_tokens = []
 
     with torch.no_grad():
         for input_ids, labels, n_tokens in tqdm(data, desc="Evaluating: ", unit="batch", total=len(data)):
-            output = model(input_ids, labels=input_ids) # forward pass (loss is computed by the model)
+            output = model(input_ids, labels=labels) # forward pass (loss is computed by the model, pad ignored)
             # from avg loss to total loss (batches may have different number of tokens, ex. for padding)
             # we want to compute the avg loss of the epoch correctly
             loss_array.append(output.loss.item() * n_tokens)
