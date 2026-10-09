@@ -27,14 +27,16 @@ if __name__ == "__main__":
     test_loader = DataLoader(test_dataset, batch_size=16, collate_fn=collate)
 
     # 0: learning rate tuning (rank=8, alpha=16 fixed)
-    best_model, best_ppl, test_ppl, lr = run_lr_tuning(
-        [1e-4, 3e-4, 1e-3], 8, 16, DEVICE, train_loader, dev_loader, test_loader
-    )
-
-    # 1: rank tuning (alpha = 2 * rank)
-    # best_model, best_ppl, test_ppl, rank = run_rank_tuning(
-    #     [4, 8, 16, 32], lr, DEVICE, train_loader, dev_loader, test_loader
+    # best_model, best_ppl, test_ppl, lr = run_lr_tuning(
+    #     [1e-4, 3e-4, 1e-3], 8, 16, DEVICE, train_loader, dev_loader, test_loader
     # )
+
+    lr = 0.0003
+
+    # 1: rank tuning (with alpha = 2 * rank to preserve the scale)
+    best_model, best_ppl, test_ppl, rank = run_rank_tuning(
+        [4, 8, 16], lr, DEVICE, train_loader, dev_loader, test_loader
+    )
 
     # 2: alpha tuning
     # best_model, best_ppl, test_ppl, alpha = run_alpha_tuning(

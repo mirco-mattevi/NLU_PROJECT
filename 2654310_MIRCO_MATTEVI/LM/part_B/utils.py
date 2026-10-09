@@ -51,14 +51,14 @@ def collate_fn(batch, tokenizer, device):
     # out = tensor of shape (Batch size, Max length)
     tokenized = tokenizer(batch, padding=True, return_tensors="pt") # padding to have the same length in the batch
 
-    input_ids = tokenized.input_ids[:, :-1].detach().clone().to(device) # every token except the last one
+    input_ids = tokenized.input_ids.to(device)
     # we don't shift the labels to the left, the model manages it internally
     labels = input_ids.clone()
     # we cannot specify ignore_index, so we replace our pad tokens with -100
     # -100 is ignored by default when the model computes the loss
     labels[labels == tokenizer.pad_token_id] = -100
 
-    # store the number of non-pad tokens
-    n_tokens = torch.sum(input_ids != tokenizer.pad_token_id)
+    # store the number of predicted tokens (the first token of each sentence is never a target)
+    n_tokens = torch.sum(labels[:, 1:] != -100)
 
     return input_ids, labels, n_tokens
