@@ -34,13 +34,13 @@ if __name__ == "__main__":
     lr = 0.0003
 
     # 1: rank tuning (with alpha = 2 * rank to preserve the scale)
-    best_model, best_ppl, test_ppl, rank = run_rank_tuning(
-        [32, 64], lr, DEVICE, train_loader, dev_loader, test_loader
-    )
-
-    # 2: alpha tuning
-    # best_model, best_ppl, test_ppl, alpha = run_alpha_tuning(
-    #     [rank, 2 * rank, 4 * rank], rank, lr, DEVICE, train_loader, dev_loader, test_loader
+    # best_model, best_ppl, test_ppl, rank = run_rank_tuning(
+    #     [32, 64], lr, DEVICE, train_loader, dev_loader, test_loader
     # )
 
-    # print(f"[LoRA] best: lr={lr} rank={rank} alpha={alpha} | dev PPL: {best_ppl:.2f} | test PPL: {test_ppl:.2f}")
+    rank = 64
+
+    # 2: alpha tuning
+    best_model, best_ppl, test_ppl, alpha = run_alpha_tuning(
+        [rank // 2, rank, 4 * rank], rank, lr, DEVICE, train_loader, dev_loader, test_loader
+    )
