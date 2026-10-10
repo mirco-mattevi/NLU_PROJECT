@@ -35,7 +35,7 @@ if __name__ == "__main__":
 
     # 1: rank tuning (with alpha = 2 * rank to preserve the scale)
     best_model, best_ppl, test_ppl, rank = run_rank_tuning(
-        [4, 8, 16], lr, DEVICE, train_loader, dev_loader, test_loader
+        [32, 64], lr, DEVICE, train_loader, dev_loader, test_loader
     )
 
     # 2: alpha tuning
