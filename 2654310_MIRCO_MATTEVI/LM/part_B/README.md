@@ -11,6 +11,7 @@ rank=32 alpha=64 | dev PPL: 20.39 | test PPL: 18.53
 rank=64 alpha=128 | dev PPL: 20.18 | test PPL: 18.48
 
 [2 - alpha tuning] lr=0.0003 rank=64
+alpha=16 | dev PPL: 20.00 | test PPL: 18.31 --> very slow in convergence (all 20 epochs): very low lr
 alpha=32 | dev PPL: 20.01 | test PPL: 18.36
 alpha=64 | dev PPL: 20.02 | test PPL: 18.31
 alpha=128 | dev PPL: 20.18 | test PPL: 18.48
