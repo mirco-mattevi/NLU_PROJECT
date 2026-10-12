@@ -42,5 +42,5 @@ if __name__ == "__main__":
 
     # 2: alpha tuning
     best_model, best_ppl, test_ppl, alpha = run_alpha_tuning(
-        [rank // 2, rank, 4 * rank], rank, lr, DEVICE, train_loader, dev_loader, test_loader
+        [rank // 4], rank, lr, DEVICE, train_loader, dev_loader, test_loader
     )

@@ -9,3 +9,9 @@ rank=8 alpha=16 | dev PPL: 21.69 | test PPL: 19.77
 rank=16 alpha=32 | dev PPL: 20.95 | test PPL: 19.07
 rank=32 alpha=64 | dev PPL: 20.39 | test PPL: 18.53
 rank=64 alpha=128 | dev PPL: 20.18 | test PPL: 18.48
+
+[2 - alpha tuning] lr=0.0003 rank=64
+alpha=32 | dev PPL: 20.01 | test PPL: 18.36
+alpha=64 | dev PPL: 20.02 | test PPL: 18.31
+alpha=128 | dev PPL: 20.18 | test PPL: 18.48
+alpha=256 | dev PPL: 20.51 | test PPL: 18.82
