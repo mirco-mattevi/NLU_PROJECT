@@ -8,7 +8,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
 
-from functions import init_weights, train_NN
+from functions import init_weights, train_and_evaluate_model
 from model import GPT2
 from utils import IntentsAndSlots, Lang, collate_fn, create_dev_split, load_data
 
@@ -54,9 +54,9 @@ if __name__ == "__main__":
     criterion_slots = nn.CrossEntropyLoss(ignore_index=PAD_TOKEN)
     criterion_intents = nn.CrossEntropyLoss()
 
-    results_test, intent_test, _ = train_NN(
-        train_loader, dev_loader, test_loader, model, optimizer,
-        criterion_slots, criterion_intents, lang,
+    results_test, intent_test, _ = train_and_evaluate_model(
+        model, optimizer, criterion_slots, criterion_intents,
+        train_loader, dev_loader, test_loader, lang,
     )
     print(f"[Experiment 0 - baseline] lr={lr}")
     print(f"Slot F1: {results_test['total']['f']:.3f}")

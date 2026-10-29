@@ -1,8 +1,5 @@
-# Training, evaluation and reporting helpers for the from-scratch GPT2 joint
-# intent classification / slot filling model (Part 2.A), adapted from LAB 05.
-
-import os
-import sys
+# Training, evaluation and weight-init helpers for the GPT2 joint
+# intent classification / slot filling model
 
 import numpy as np
 import torch
@@ -11,24 +8,22 @@ import torch.optim as optim
 from sklearn.metrics import classification_report
 from tqdm import tqdm
 
-# conll.py is provided in the LAB materials rather than duplicated here.
-_LAB_LABS_DIR = os.path.normpath(
-    os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "..", "LAB", "labs")
-)
-if _LAB_LABS_DIR not in sys.path:
-    sys.path.insert(0, _LAB_LABS_DIR)
-
 from conll import evaluate
 from model import GPT2
 
 
 def init_weights(mat):
-    """Uniformly initializes every nn.Linear layer's weights and sets its bias to a small constant."""
+    """
+    Uniformly initializes every nn.Linear layer's weights and sets its bias to a small constant.
+
+    Args:
+        mat: the module to initialize.
+    """
     for m in mat.modules():
         if type(m) in [nn.Linear]:
-            torch.nn.init.uniform_(m.weight, -0.01, 0.01)
+            torch.nn.init.uniform_(m.weight, -0.01, 0.01) # set weights: uniform distribution in [-0.01, 0.01]
             if m.bias is not None:
-                m.bias.data.fill_(0.01)
+                m.bias.data.fill_(0.01) # set bias as a small constant
 
 
 def train_loop(data, optimizer, criterion_slots, criterion_intents, model):
@@ -38,7 +33,7 @@ def train_loop(data, optimizer, criterion_slots, criterion_intents, model):
     Args:
         data: DataLoader yielding batches from utils.collate_fn.
         optimizer: optimizer updating the model's parameters.
-        criterion_slots: slot-filling loss function (ignores the pad/cls label).
+        criterion_slots: slot-filling loss function (CrossEntropyLoss, ignores pad/cls labels).
         criterion_intents: intent classification loss function.
         model: the GPT2 model being trained.
     Returns:
@@ -48,28 +43,28 @@ def train_loop(data, optimizer, criterion_slots, criterion_intents, model):
     loss_array = []
 
     for batch in data:
-        optimizer.zero_grad()
-
-        slots, intent = model(batch['utterances'], batch['slots_len'])
-        slots = slots.permute(0, 2, 1)  # (B, slots_size, L), required by CrossEntropyLoss
+        optimizer.zero_grad() # zero the gradient so that it doesn't accumulate across batches
+        slots, intent = model(batch['utterances'], batch['slots_len']) # forward pass
+        slots = slots.permute(0, 2, 1) # (B, slots_size, L), required by CrossEntropyLoss
 
         loss_intent = criterion_intents(intent, batch['intents'])
         loss_slot = criterion_slots(slots, batch['y_slots'])
-        loss = loss_intent + loss_slot  # simplest joint-training strategy: unweighted sum
+        loss = loss_intent + loss_slot # simplest joint-training strategy: unweighted sum
         loss_array.append(loss.item())
-        loss.backward()
-        optimizer.step()
+        loss.backward() # backpropagation
+        optimizer.step() # update the model's parameters
 
     return loss_array
 
 
 def eval_loop(data, criterion_slots, criterion_intents, model, lang):
     """
-    Evaluates the model on `data`: slot F1 (conll) and intent classification report.
+    Evaluates the model on `data` without updating its weights:
+    slot F1 (conll) and intent classification report.
 
     Args:
         data: DataLoader yielding batches from utils.collate_fn.
-        criterion_slots: slot-filling loss function.
+        criterion_slots: slot-filling loss function (CrossEntropyLoss, ignores pad/cls labels).
         criterion_intents: intent classification loss function.
         model: the GPT2 model being evaluated.
         lang: utils.Lang instance, used to decode ids back to words/labels.
@@ -86,23 +81,26 @@ def eval_loop(data, criterion_slots, criterion_intents, model, lang):
 
     with torch.no_grad():
         for batch in data:
-            slots, intents = model(batch['utterances'], batch['slots_len'])
-            slots = slots.permute(0, 2, 1)
+            slots, intents = model(batch['utterances'], batch['slots_len']) # forward pass
+            slots = slots.permute(0, 2, 1) # (B, slots_size, L), required by CrossEntropyLoss
             loss_intent = criterion_intents(intents, batch['intents'])
             loss_slot = criterion_slots(slots, batch['y_slots'])
             loss_array.append((loss_intent + loss_slot).item())
 
-            out_intents = [lang.id2intent[x] for x in torch.argmax(intents, dim=1).tolist()]
+            # intent inference: id of the most likely intent -> label
+            out_intents = [lang.id2intent[x] for x in torch.argmax(intents, dim=1).tolist()] # dim = 1 -> for each row (sentence)
             gt_intents = [lang.id2intent[x] for x in batch['intents'].tolist()]
             ref_intents.extend(gt_intents)
             hyp_intents.extend(out_intents)
 
-            output_slots = torch.argmax(slots, dim=1)
+            # slot inference: decode each sequence back to (word, label) pairs for conll
+            output_slots = torch.argmax(slots, dim=1) # dim = 1 -> for each row (sentence)
             for id_seq, seq in enumerate(output_slots):
-                length = batch['slots_len'].tolist()[id_seq] - 1  # exclude the CLS token
-
+                # exclude the CLS token for each sentence
+                length = batch['slots_len'].tolist()[id_seq] - 1
                 utt_ids = batch['utterances'][id_seq][:length].tolist()
                 gt_ids = batch['y_slots'][id_seq][:length].tolist()
+                # retrieve the slot labels and words from their ids
                 gt_slots = [lang.id2slot[elem] for elem in gt_ids]
                 utterance = [lang.id2word[elem] for elem in utt_ids]
 
@@ -121,34 +119,43 @@ def eval_loop(data, criterion_slots, criterion_intents, model, lang):
     return results, report_intent, loss_array
 
 
-def train_NN(train_loader, dev_loader, test_loader, model, optimizer, criterion_slots,
-             criterion_intents, lang, n_epochs=200, patience=3):
+def train_and_evaluate_model(
+    model,
+    optimizer,
+    criterion_slots,
+    criterion_intents,
+    train_loader,
+    dev_loader,
+    test_loader,
+    lang,
+    n_epochs=200,
+    patience=3,
+):
     """
     Trains `model` with early stopping on dev-set slot F1, then reports test performance.
 
-    Reusable across every experiment of Part 2.A (baseline, hyperparameter
-    search, dropout) so main.py doesn't repeat the training loop.
-
     Args:
-        train_loader, dev_loader, test_loader: DataLoaders for each split.
         model: the GPT2 model to train.
         optimizer: optimizer updating the model's parameters.
         criterion_slots, criterion_intents: loss functions.
+        train_loader, dev_loader, test_loader: DataLoaders for each split.
         lang: utils.Lang instance, needed by eval_loop.
         n_epochs: maximum number of training epochs.
         patience: number of consecutive non-improving evals before stopping early.
     Returns:
-        Tuple (results_test, intent_test, history), where history is a dict
-        with "sampled_epochs", "losses_train", "losses_dev".
+        Tuple (results_test, intent_test, history), where history is a
+        dict with "sampled_epochs", "losses_train", "losses_dev".
     """
-    losses_train, losses_dev, sampled_epochs = [], [], []
+    losses_train = []
+    losses_dev = []
+    sampled_epochs = []
     best_f1 = 0
     current_patience = patience
 
     pbar = tqdm(range(n_epochs))
-    for i in pbar:
+    for epoch in pbar:
         loss = train_loop(train_loader, optimizer, criterion_slots, criterion_intents, model)
-        sampled_epochs.append(i)
+        sampled_epochs.append(epoch)
         losses_train.append(np.asarray(loss).mean())
 
         results_dev, intent_res, loss_dev = eval_loop(
@@ -165,16 +172,31 @@ def train_NN(train_loader, dev_loader, test_loader, model, optimizer, criterion_
             current_patience = patience
         else:
             current_patience -= 1
-        if current_patience <= 0:
+
+        if current_patience <= 0: # early stopping
             break
 
     results_test, intent_test, _ = eval_loop(test_loader, criterion_slots, criterion_intents, model, lang)
-    history = {"sampled_epochs": sampled_epochs, "losses_train": losses_train, "losses_dev": losses_dev}
+
+    history = {
+        "sampled_epochs": sampled_epochs,
+        "losses_train": losses_train,
+        "losses_dev": losses_dev,
+    }
     return results_test, intent_test, history
 
 
 def save_model(path, epoch, model, optimizer, w2id, slot2id, intent2id):
-    """Saves the model/optimizer state together with the vocabularies needed to reload it."""
+    """
+    Saves the model/optimizer state together with the vocabularies needed to reload it.
+
+    Args:
+        path: destination file.
+        epoch: epoch at which the model is saved.
+        model: the GPT2 model.
+        optimizer: optimizer whose state is saved alongside the model.
+        w2id, slot2id, intent2id: word/slot/intent vocabularies of utils.Lang.
+    """
     saving_object = {
         "epoch": epoch,
         "model": model.state_dict(),
@@ -187,7 +209,12 @@ def save_model(path, epoch, model, optimizer, w2id, slot2id, intent2id):
 
 
 def plot_train_and_valid_losses(sampled_epochs, losses_train, losses_dev):
-    """Plots the training and dev loss curves collected by train_NN."""
+    """
+    Plots the training and dev loss curves collected by train_and_evaluate_model.
+
+    Args:
+        sampled_epochs, losses_train, losses_dev: the entries of its `history` dict.
+    """
     import matplotlib.pyplot as plt
 
     plt.figure(num=3, figsize=(8, 5)).patch.set_facecolor('white')
@@ -201,7 +228,7 @@ def plot_train_and_valid_losses(sampled_epochs, losses_train, losses_dev):
 
 
 def multiple_runs(train_loader, dev_loader, test_loader, lang, model_kwargs, lr,
-                   device, n_epochs=200, runs=5, patience=3):
+                  device, n_epochs=200, runs=5, patience=3):
     """
     Trains the model from scratch `runs` times and reports mean +/- std test performance.
 
@@ -212,7 +239,7 @@ def multiple_runs(train_loader, dev_loader, test_loader, lang, model_kwargs, lr,
         train_loader, dev_loader, test_loader: DataLoaders for each split.
         lang: utils.Lang instance.
         model_kwargs: kwargs forwarded to model.GPT2 (besides the vocab/label sizes).
-        lr: learning rate for AdamW.
+        lr: learning rate for the AdamW optimizer.
         device: torch device to build each model on.
         n_epochs: maximum number of training epochs per run.
         runs: number of independent training runs.
@@ -233,9 +260,9 @@ def multiple_runs(train_loader, dev_loader, test_loader, lang, model_kwargs, lr,
         criterion_slots = nn.CrossEntropyLoss(ignore_index=lang.pad_token)
         criterion_intents = nn.CrossEntropyLoss()
 
-        results_test, intent_test, _ = train_NN(
-            train_loader, dev_loader, test_loader, model, optimizer,
-            criterion_slots, criterion_intents, lang, n_epochs=n_epochs, patience=patience,
+        results_test, intent_test, _ = train_and_evaluate_model(
+            model, optimizer, criterion_slots, criterion_intents,
+            train_loader, dev_loader, test_loader, lang, n_epochs=n_epochs, patience=patience,
         )
         intent_acc.append(intent_test['accuracy'])
         slot_f1s.append(results_test['total']['f'])
