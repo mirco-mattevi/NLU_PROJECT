@@ -7,7 +7,7 @@ import torch.nn.functional as F
 
 class MultiHeadAttention(nn.Module):
     """
-        Masked multi-head self-attention.
+    Masked multi-head self-attention.
     """
 
     def __init__(self, d_model, n_heads, dropout=0.1):
@@ -73,7 +73,7 @@ class MultiHeadAttention(nn.Module):
 
 class FeedForward(nn.Module):
     """
-        Position-wise feed-forward block.
+    Position-wise feed-forward block.
     """
     def __init__(self, d_model, hidden_dim, dropout=0.1):
         """
@@ -92,14 +92,14 @@ class FeedForward(nn.Module):
 
     def forward(self, x):
         """
-            Applies the feed-forward transformation independently to every token.
+        Applies the feed-forward transformation independently to every token.
         """
         return self.net(x)
 
 
 class TransformerBlock(nn.Module):
     """
-        Pre-LayerNormalization transformer block: LN -> attention -> out -> LN -> FF -> out.
+    Pre-LayerNormalization transformer block: LN -> attention -> out -> LN -> FF -> out.
     """
     def __init__(self, d_model, n_heads, ff_dim, dropout=0.1):
         super().__init__()
@@ -124,7 +124,7 @@ class TransformerBlock(nn.Module):
 
 class GPT2(nn.Module):
     """
-        Decoder-only GPT2 language model, predicting the next token at every position.
+    Decoder-only GPT2 language model, predicting the next token at every position.
     """
     def __init__(
         self,

@@ -15,7 +15,7 @@ from model import GPT2_LoRA
 
 def param_stats(model):
     """
-        Prints the total, trainable and frozen parameter counts of `model`.
+    Prints the total, trainable and frozen parameter counts of `model`.
     """
     total = sum(param.numel() for param in model.parameters())
     trainable = sum(param.numel() for param in model.parameters() if param.requires_grad)
