@@ -55,12 +55,12 @@ if __name__ == "__main__":
     config, best_f1, _ = tune("lr", lrs, config, best_f1)
 
     # 1: hyperparameter tuning, one at a time (d_model, n_heads, num_layers, ff_dim)
-    config, best_f1, _ = tune("d_model", [32, 64, 128, 256, 512], config, best_f1)
-    config, best_f1, _ = tune("n_heads", [h for h in [2, 4, 8, 16] if config["d_model"] % h == 0], config, best_f1)
-    config, best_f1, _ = tune("num_layers", [2, 3, 4, 6, 8], config, best_f1)
-    config, best_f1, _ = tune("ff_dim", [m * config["d_model"] for m in [1, 2, 4, 8]], config, best_f1)
+    # config, best_f1, _ = tune("d_model", [32, 64, 128, 256, 512], config, best_f1)
+    # config, best_f1, _ = tune("n_heads", [h for h in [2, 4, 8, 16] if config["d_model"] % h == 0], config, best_f1)
+    # config, best_f1, _ = tune("num_layers", [2, 3, 4, 6, 8], config, best_f1)
+    # config, best_f1, _ = tune("ff_dim", [m * config["d_model"] for m in [1, 2, 4, 8]], config, best_f1)
     # readjust the learning rate for the larger model (current lr already measured)
-    config, best_f1, _ = tune("lr", [lr for lr in lrs + [0.0001] if lr != config["lr"]], config, best_f1)
+    # config, best_f1, _ = tune("lr", [lr for lr in lrs + [0.0001] if lr != config["lr"]], config, best_f1)
 
     with open("README.md", "a") as f:
         f.write(f"\n--> best after experiment 1: {config} | dev slot F1: {best_f1:.4f}\n")
