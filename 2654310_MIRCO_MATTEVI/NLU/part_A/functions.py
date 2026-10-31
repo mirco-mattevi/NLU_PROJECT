@@ -1,6 +1,8 @@
 # Training, evaluation and weight-init helpers for the GPT2 joint
 # intent classification / slot filling model
 
+import copy
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -94,25 +96,30 @@ def eval_loop(data, criterion_slots, criterion_intents, model, lang):
             hyp_intents.extend(out_intents)
 
             # slot inference: decode each sequence back to (word, label) pairs for conll
-            output_slots = torch.argmax(slots, dim=1) # dim = 1 -> for each row (sentence)
+            output_slots = torch.argmax(slots, dim=1) # Best slot label for each token
             for id_seq, seq in enumerate(output_slots):
-                # exclude the CLS token for each sentence
+                # exclude the CLS token from each sentence
                 length = batch['slots_len'].tolist()[id_seq] - 1
                 utt_ids = batch['utterances'][id_seq][:length].tolist()
                 gt_ids = batch['y_slots'][id_seq][:length].tolist()
-                # retrieve the slot labels and words from their ids
+                # retrieve the slot labels and words from the ids
                 gt_slots = [lang.id2slot[elem] for elem in gt_ids]
                 utterance = [lang.id2word[elem] for elem in utt_ids]
 
+                # exclude the CLS token from each predicted sentence ids
                 to_decode = seq[:length].tolist()
+                # build (word, slot_label) for predicted and gt as expected by conll
                 ref_slots.append([(utterance[id_el], elem) for id_el, elem in enumerate(gt_slots)])
                 hyp_slots.append([(utterance[id_el], lang.id2slot[elem]) for id_el, elem in enumerate(to_decode)])
 
     try:
         results = evaluate(ref_slots, hyp_slots)
     except Exception as ex:
-        # the model may predict a slot class absent from the references, which conll.evaluate rejects
+        # the model may predict a slot class absent in REF, which conll.evaluate rejects
         print("Warning:", ex)
+        ref_s = set([x[1] for x in ref_slots])
+        hyp_s = set([x[1] for x in hyp_slots])
+        print(hyp_s.difference(ref_s))
         results = {"total": {"f": 0}}
 
     report_intent = classification_report(ref_intents, hyp_intents, zero_division=False, output_dict=True)
@@ -143,47 +150,52 @@ def train_and_evaluate_model(
         n_epochs: maximum number of training epochs.
         patience: number of consecutive non-improving evals before stopping early.
     Returns:
-        Tuple (results_test, intent_test, history), where history is a
-        dict with "sampled_epochs", "losses_train", "losses_dev".
+        Tuple (best_model, best_f1, results_test, intent_test, history), where
+        history is a dict with "sampled_epochs", "losses_train", "losses_dev".
     """
     losses_train = []
     losses_dev = []
     sampled_epochs = []
     best_f1 = 0
+    best_model = None
     current_patience = patience
 
     pbar = tqdm(range(n_epochs))
     for epoch in pbar:
         loss = train_loop(train_loader, optimizer, criterion_slots, criterion_intents, model)
-        sampled_epochs.append(epoch)
-        losses_train.append(np.asarray(loss).mean())
+        if epoch % 1 == 0: # sample every epoch
+            sampled_epochs.append(epoch)
+            losses_train.append(np.asarray(loss).mean())
 
-        results_dev, intent_res, loss_dev = eval_loop(
-            dev_loader, criterion_slots, criterion_intents, model, lang
-        )
-        losses_dev.append(np.asarray(loss_dev).mean())
-        pbar.set_description(
-            f"Slot F1: {results_dev['total']['f']:.2f}; Intent Acc: {intent_res['accuracy']:.2f}"
-        )
+            results_dev, intent_res, loss_dev = eval_loop(
+                dev_loader, criterion_slots, criterion_intents, model, lang
+            )
+            losses_dev.append(np.asarray(loss_dev).mean())
+            pbar.set_description(
+                f"Slot F1: {results_dev['total']['f']:.2f}; Intent Acc: {intent_res['accuracy']:.2f}"
+            )
 
-        f1 = results_dev['total']['f']
-        if f1 > best_f1:
-            best_f1 = f1
-            current_patience = patience
-        else:
-            current_patience -= 1
+            f1 = results_dev['total']['f']
+            if f1 > best_f1:
+                best_f1 = f1
+                best_model = copy.deepcopy(model).to('cpu')
+                current_patience = patience
+            else:
+                current_patience -= 1
 
-        if current_patience <= 0: # early stopping
-            break
+            if current_patience <= 0: # early stopping
+                break
 
-    results_test, intent_test, _ = eval_loop(test_loader, criterion_slots, criterion_intents, model, lang)
+    device = next(model.parameters()).device
+    best_model.to(device)
+    results_test, intent_test, _ = eval_loop(test_loader, criterion_slots, criterion_intents, best_model, lang)
 
     history = {
         "sampled_epochs": sampled_epochs,
         "losses_train": losses_train,
         "losses_dev": losses_dev,
     }
-    return results_test, intent_test, history
+    return best_model, best_f1, results_test, intent_test, history
 
 
 def save_model(path, epoch, model, optimizer, w2id, slot2id, intent2id):
@@ -208,7 +220,7 @@ def save_model(path, epoch, model, optimizer, w2id, slot2id, intent2id):
     torch.save(saving_object, path)
 
 
-def plot_train_and_valid_losses(sampled_epochs, losses_train, losses_dev):
+def plot_losses(sampled_epochs, losses_train, losses_dev):
     """
     Plots the training and dev loss curves collected by train_and_evaluate_model.
 
@@ -232,8 +244,7 @@ def multiple_runs(train_loader, dev_loader, test_loader, lang, model_kwargs, lr,
     """
     Trains the model from scratch `runs` times and reports mean +/- std test performance.
 
-    Small corpora like ATIS give noisy single-run results, so the notebook
-    recommends averaging over several random initializations.
+    Used to avoid the noise of a single training run on small datasets (like ATIS).
 
     Args:
         train_loader, dev_loader, test_loader: DataLoaders for each split.
@@ -260,7 +271,7 @@ def multiple_runs(train_loader, dev_loader, test_loader, lang, model_kwargs, lr,
         criterion_slots = nn.CrossEntropyLoss(ignore_index=lang.pad_token)
         criterion_intents = nn.CrossEntropyLoss()
 
-        results_test, intent_test, _ = train_and_evaluate_model(
+        _, _, results_test, intent_test, _ = train_and_evaluate_model(
             model, optimizer, criterion_slots, criterion_intents,
             train_loader, dev_loader, test_loader, lang, n_epochs=n_epochs, patience=patience,
         )

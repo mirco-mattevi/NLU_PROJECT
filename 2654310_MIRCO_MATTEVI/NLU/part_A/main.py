@@ -54,7 +54,7 @@ if __name__ == "__main__":
     criterion_slots = nn.CrossEntropyLoss(ignore_index=PAD_TOKEN)
     criterion_intents = nn.CrossEntropyLoss()
 
-    results_test, intent_test, _ = train_and_evaluate_model(
+    best_model, best_f1, results_test, intent_test, _ = train_and_evaluate_model(
         model, optimizer, criterion_slots, criterion_intents,
         train_loader, dev_loader, test_loader, lang,
     )
