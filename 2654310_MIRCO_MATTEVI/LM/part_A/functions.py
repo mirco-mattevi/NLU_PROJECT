@@ -175,7 +175,7 @@ def run_lr_tuning(vocab_len, lr, device, train_loader, dev_loader, test_loader, 
         model, optimizer, criterion_train, criterion_eval, train_loader, dev_loader, test_loader
     )
     with open("README.md", "a") as f:
-        f.write(f"[0 - baseline, learning rate tuning] lr={lr} | dev PPL: {best_ppl:.2f} | test PPL: {test_ppl:.2f}")
+        f.write(f"[0 - baseline, learning rate tuning] lr={lr} | dev PPL: {best_ppl:.2f} | test PPL: {test_ppl:.2f}\n")
 
     torch.save(best_model.state_dict(), os.path.join("bin", f"0_lr{lr}.pt"))
     return best_model, best_ppl, test_ppl

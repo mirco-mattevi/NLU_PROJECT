@@ -2,6 +2,8 @@
 # intent classification / slot filling model
 
 import copy
+import os
+import time
 
 import numpy as np
 import torch
@@ -156,7 +158,8 @@ def train_and_evaluate_model(
     losses_train = []
     losses_dev = []
     sampled_epochs = []
-    best_f1 = 0
+    best_f1 = -1 # so that a model is always kept, even if dev F1 stays 0
+    best_loss_dev = float('inf')
     best_model = None
     current_patience = patience
 
@@ -175,10 +178,20 @@ def train_and_evaluate_model(
                 f"Slot F1: {results_dev['total']['f']:.2f}; Intent Acc: {intent_res['accuracy']:.2f}"
             )
 
+            # the model is selected on dev slot F1, but patience is also reset when the dev loss
+            # improves: in the first epochs slot F1 stays ~0 (only "O" predicted) while the
+            # loss keeps decreasing, and stopping on F1 alone would end training there
+            improved = False
             f1 = results_dev['total']['f']
             if f1 > best_f1:
                 best_f1 = f1
                 best_model = copy.deepcopy(model).to('cpu')
+                improved = True
+            if losses_dev[-1] < best_loss_dev:
+                best_loss_dev = losses_dev[-1]
+                improved = True
+
+            if improved:
                 current_patience = patience
             else:
                 current_patience -= 1
@@ -198,53 +211,56 @@ def train_and_evaluate_model(
     return best_model, best_f1, results_test, intent_test, history
 
 
-def save_model(path, epoch, model, optimizer, w2id, slot2id, intent2id):
+def save_model(path, model, lang):
     """
-    Saves the model/optimizer state together with the vocabularies needed to reload it.
+    Saves the model weights together with the vocabularies needed to reload it.
 
     Args:
         path: destination file.
-        epoch: epoch at which the model is saved.
         model: the GPT2 model.
-        optimizer: optimizer whose state is saved alongside the model.
-        w2id, slot2id, intent2id: word/slot/intent vocabularies of utils.Lang.
+        lang: utils.Lang instance whose word/slot/intent vocabularies are saved.
     """
     saving_object = {
-        "epoch": epoch,
         "model": model.state_dict(),
-        "optimizer": optimizer.state_dict(),
-        "w2id": w2id,
-        "slot2id": slot2id,
-        "intent2id": intent2id,
+        "w2id": lang.word2id,
+        "slot2id": lang.slot2id,
+        "intent2id": lang.intent2id,
     }
     torch.save(saving_object, path)
 
 
-def plot_losses(sampled_epochs, losses_train, losses_dev):
+def plot_losses(history, path, title='Train and Dev Losses'):
     """
-    Plots the training and dev loss curves collected by train_and_evaluate_model.
+    Saves the training and dev loss curves collected by train_and_evaluate_model to `path`.
 
     Args:
-        sampled_epochs, losses_train, losses_dev: the entries of its `history` dict.
+        history: the `history` dict returned by train_and_evaluate_model.
+        path: destination image file.
+        title: title of the plot.
     """
+    import matplotlib
+    matplotlib.use("Agg") # Render plots directly to image files
     import matplotlib.pyplot as plt
 
-    plt.figure(num=3, figsize=(8, 5)).patch.set_facecolor('white')
-    plt.title('Train and Dev Losses')
+    fig = plt.figure(figsize=(8, 5))
+    fig.patch.set_facecolor('white')
+    plt.title(title)
     plt.ylabel('Loss')
     plt.xlabel('Epochs')
-    plt.plot(sampled_epochs, losses_train, label='Train loss')
-    plt.plot(sampled_epochs, losses_dev, label='Dev loss')
+    plt.plot(history["sampled_epochs"], history["losses_train"], label='Train loss')
+    plt.plot(history["sampled_epochs"], history["losses_dev"], label='Dev loss')
     plt.legend()
-    plt.show()
+    fig.savefig(path)
+    plt.close(fig) # otherwise every new plot is drawn on top of the previous ones
 
 
 def multiple_runs(train_loader, dev_loader, test_loader, lang, model_kwargs, lr,
                   device, n_epochs=200, runs=5, patience=3):
     """
-    Trains the model from scratch `runs` times and reports mean +/- std test performance.
+    Trains the model from scratch `runs` times and aggregates dev and test performance.
 
     Used to avoid the noise of a single training run on small datasets (like ATIS).
+    Candidates must be compared on the dev scores, the test scores are only reported.
 
     Args:
         train_loader, dev_loader, test_loader: DataLoaders for each split.
@@ -253,17 +269,23 @@ def multiple_runs(train_loader, dev_loader, test_loader, lang, model_kwargs, lr,
         lr: learning rate for the AdamW optimizer.
         device: torch device to build each model on.
         n_epochs: maximum number of training epochs per run.
-        runs: number of independent training runs.
+        runs: number of independent training runs (seeded 0 .. runs-1).
         patience: early-stopping patience per run.
     Returns:
-        Tuple (slot_f1s, intent_accs) as numpy arrays, one entry per run.
+        dict with:
+            "dev_f1s", "test_f1s", "test_accs": numpy arrays, one entry per run.
+            "best_model", "history": model and loss history of the run with the best dev slot F1.
     """
     vocab_len = len(lang.word2id)
     slots_len = len(lang.id2slot)
     n_intents = len(lang.intent2id)
 
-    slot_f1s, intent_acc = [], []
-    for _ in tqdm(range(runs)):
+    dev_f1s, test_f1s, test_accs = [], [], []
+    best_run_f1, best_run_model, best_run_history = -1, None, None
+    for seed in tqdm(range(runs)):
+        # run i always uses seed i: every candidate sees the same initializations and batch
+        # orders, so differences between candidates are not due to the random seed
+        torch.manual_seed(seed)
         model = GPT2(vocab_len, slots_len, n_intents, **model_kwargs).to(device)
         model.apply(init_weights)
 
@@ -271,15 +293,100 @@ def multiple_runs(train_loader, dev_loader, test_loader, lang, model_kwargs, lr,
         criterion_slots = nn.CrossEntropyLoss(ignore_index=lang.pad_token)
         criterion_intents = nn.CrossEntropyLoss()
 
-        _, _, results_test, intent_test, _ = train_and_evaluate_model(
+        run_model, run_f1, results_test, intent_test, history = train_and_evaluate_model(
             model, optimizer, criterion_slots, criterion_intents,
             train_loader, dev_loader, test_loader, lang, n_epochs=n_epochs, patience=patience,
         )
-        intent_acc.append(intent_test['accuracy'])
-        slot_f1s.append(results_test['total']['f'])
+        dev_f1s.append(run_f1)
+        test_f1s.append(results_test['total']['f'])
+        test_accs.append(intent_test['accuracy'])
 
-    slot_f1s = np.asarray(slot_f1s)
-    intent_acc = np.asarray(intent_acc)
-    print('Slot F1', round(slot_f1s.mean(), 3), '+-', round(slot_f1s.std(), 3))
-    print('Intent Acc', round(intent_acc.mean(), 3), '+-', round(intent_acc.std(), 3))
-    return slot_f1s, intent_acc
+        if run_f1 > best_run_f1:
+            best_run_f1, best_run_model, best_run_history = run_f1, run_model.to('cpu'), history
+
+    res = {
+        "dev_f1s": np.asarray(dev_f1s),
+        "test_f1s": np.asarray(test_f1s),
+        "test_accs": np.asarray(test_accs),
+        "best_model": best_run_model,
+        "history": best_run_history,
+    }
+    print('Dev Slot F1', round(res["dev_f1s"].mean(), 3), '+-', round(res["dev_f1s"].std(), 3))
+    print('Test Slot F1', round(res["test_f1s"].mean(), 3), '+-', round(res["test_f1s"].std(), 3))
+    print('Test Intent Acc', round(res["test_accs"].mean(), 3), '+-', round(res["test_accs"].std(), 3))
+    return res
+
+
+def format_results(res):
+    """
+    Formats the output of multiple_runs as a single README line (mean +- std over runs).
+
+    Args:
+        res: dict returned by multiple_runs.
+    Returns:
+        the formatted string.
+    """
+    return (
+        f"dev slot F1: {res['dev_f1s'].mean():.4f} +- {res['dev_f1s'].std():.4f} | "
+        f"test slot F1: {res['test_f1s'].mean():.4f} +- {res['test_f1s'].std():.4f} | "
+        f"test intent acc: {res['test_accs'].mean():.4f} +- {res['test_accs'].std():.4f}"
+    )
+
+
+def run_tuning(name, values, config, best_f1, lang, device, train_loader, dev_loader, test_loader, runs=5):
+    """
+    Tunes a single hyperparameter: trains one candidate per value of `name`, keeping all the
+    other hyperparameters fixed to `config`. A value is accepted only if it improves the mean
+    dev slot F1, so calling this once per hyperparameter gives the incremental search
+    (0: lr, 1: d_model -> n_heads -> num_layers -> ff_dim -> lr again for the larger model).
+
+    Args:
+        name: hyperparameter to tune, "lr" or one of the model.GPT2 kwargs.
+        values: candidate values for `name`.
+        config: current best configuration, dict with "lr" and the model.GPT2 kwargs.
+        best_f1: mean dev slot F1 to beat.
+        lang: utils.Lang instance.
+        device: torch device to train on.
+        train_loader, dev_loader, test_loader: DataLoaders for each split.
+        runs: number of independent training runs per candidate.
+    Returns:
+        Tuple (best_config, best_f1, best_res), where best_res is the multiple_runs dict of
+        the accepted candidate (None if no value beats `best_f1`).
+    """
+    best_config = config
+    best_res = None
+
+    with open("README.md", "a") as f:
+        f.write(f"\n[{name} tuning] starting from {config} (dev slot F1 to beat: {best_f1:.4f})\n")
+
+    for value in values:
+        candidate = {**config, name: value}
+        lr = candidate["lr"]
+        model_kwargs = {k: v for k, v in candidate.items() if k != "lr"}
+        start = time.time()
+        res = multiple_runs(
+            train_loader, dev_loader, test_loader, lang,
+            model_kwargs, lr, device, runs=runs,
+        )
+        minutes = (time.time() - start) / 60
+
+        with open("README.md", "a") as f:
+            f.write(f"{name}={value} | {format_results(res)} | {minutes:.1f} min\n")
+        plot_losses(
+            res["history"], os.path.join("plots", f"{name}{value}.png"),
+            title=f"{name}={value} (best of {runs} runs)",
+        )
+
+        if res["dev_f1s"].mean() > best_f1:
+            best_f1, best_res, best_config = res["dev_f1s"].mean(), res, candidate
+
+    with open("README.md", "a") as f:
+        if best_res is None:
+            f.write(f"--> no {name} improves the dev slot F1, kept {name}={config[name]}\n")
+        else:
+            f.write(f"--> best {name}={best_config[name]} | {format_results(best_res)}\n")
+    if best_res is not None:
+        save_model(os.path.join("bin", f"{name}{best_config[name]}.pt"), best_res["best_model"], lang)
+
+    return best_config, best_f1, best_res
+

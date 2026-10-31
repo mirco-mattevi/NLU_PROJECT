@@ -1,15 +1,12 @@
-# This file is used to run your functions and print the results
-# Please write your fuctions or classes in the functions.py
 
 import os
+from functools import partial
 
 import torch
-import torch.nn as nn
-import torch.optim as optim
 from torch.utils.data import DataLoader
 
-from functions import init_weights, train_and_evaluate_model
-from model import GPT2
+
+from functions import run_tuning
 from utils import IntentsAndSlots, Lang, collate_fn, create_dev_split, load_data
 
 if __name__ == "__main__":
@@ -21,10 +18,10 @@ if __name__ == "__main__":
     test_raw = load_data(os.path.join(DATASET_DIR, "test.json"))
     train_raw, dev_raw = create_dev_split(tmp_train_raw, portion=0.10)
 
-    words = sum([x['utterance'].split() for x in train_raw], [])
-    corpus = train_raw + dev_raw + test_raw
-    slots = set(sum([line['slots'].split() for line in corpus], []))
-    intents = set([line['intent'] for line in corpus])
+    words = sum([x['utterance'].split() for x in train_raw], []) # get all words in the training set utterances
+    corpus = train_raw + dev_raw + test_raw 
+    slots = set(sum([line['slots'].split() for line in corpus], [])) # get all slots in the corpus
+    intents = set([line['intent'] for line in corpus]) # get all intents in the corpus
     lang = Lang(words, intents, slots, pad_token=PAD_TOKEN, cutoff=0)
 
     train_dataset = IntentsAndSlots(train_raw, lang)
@@ -38,32 +35,35 @@ if __name__ == "__main__":
     dev_loader = DataLoader(dev_dataset, batch_size=64, collate_fn=collate)
     test_loader = DataLoader(test_dataset, batch_size=64, collate_fn=collate)
 
-    vocab_len = len(lang.word2id)
-    slots_len = len(lang.id2slot)
-    n_intents = len(lang.intent2id)
+    os.makedirs("bin", exist_ok=True)
+    os.makedirs("plots", exist_ok=True)
 
-    # ---- Experiment 0: baseline, find a suitable learning rate ----
-    lr = 0.0005
-    model = GPT2(
-        vocab_len, slots_len, n_intents,
-        pos_emb_size=1024, d_model=20, n_heads=1, num_layers=1, ff_dim=20,
-    ).to(DEVICE)
-    model.apply(init_weights)
-
-    optimizer = optim.AdamW(model.parameters(), lr=lr)
-    criterion_slots = nn.CrossEntropyLoss(ignore_index=PAD_TOKEN)
-    criterion_intents = nn.CrossEntropyLoss()
-
-    best_model, best_f1, results_test, intent_test, _ = train_and_evaluate_model(
-        model, optimizer, criterion_slots, criterion_intents,
-        train_loader, dev_loader, test_loader, lang,
+    tune = partial(
+        run_tuning, lang=lang, device=DEVICE,
+        train_loader=train_loader, dev_loader=dev_loader, test_loader=test_loader,
     )
-    print(f"[Experiment 0 - baseline] lr={lr}")
-    print(f"Slot F1: {results_test['total']['f']:.3f}")
-    print(f"Intent Accuracy: {intent_test['accuracy']:.3f}")
 
-    # ---- Experiment 1: hyperparameter search (d_model, n_heads, num_layers, ff_dim) ----
-    # TODO: change one hyperparameter at a time, re-tuning lr for larger models.
+    # baseline configuration, dropout disabled for experiments 0 and 1
+    config = {"lr": 0.001, "d_model": 20, "n_heads": 1, "num_layers": 1, "ff_dim": 20, "dropout": 0.0}
+    best_f1 = -1
+    lrs = [0.05, 0.01, 0.005, 0.001, 0.0005]
 
-    # ---- Experiment 2: dropout before the final output layers ----
+    # each step starts from the best config (and its dev slot F1) of the previous one: when
+    # running one step per session, set config and best_f1 from the README of the previous step
+
+    # 0: baseline, learning rate tuning
+    config, best_f1, _ = tune("lr", lrs, config, best_f1)
+
+    # 1: hyperparameter tuning, one at a time (d_model, n_heads, num_layers, ff_dim)
+    config, best_f1, _ = tune("d_model", [32, 64, 128, 256, 512], config, best_f1)
+    config, best_f1, _ = tune("n_heads", [h for h in [2, 4, 8, 16] if config["d_model"] % h == 0], config, best_f1)
+    config, best_f1, _ = tune("num_layers", [2, 3, 4, 6, 8], config, best_f1)
+    config, best_f1, _ = tune("ff_dim", [m * config["d_model"] for m in [1, 2, 4, 8]], config, best_f1)
+    # readjust the learning rate for the larger model (current lr already measured)
+    config, best_f1, _ = tune("lr", [lr for lr in lrs + [0.0001] if lr != config["lr"]], config, best_f1)
+
+    with open("README.md", "a") as f:
+        f.write(f"\n--> best after experiment 1: {config} | dev slot F1: {best_f1:.4f}\n")
+
+    # 2: dropout before the final output layers
     # TODO: requires the dropout layer marked as TODO in model.py to be implemented first.
