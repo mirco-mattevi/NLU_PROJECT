@@ -159,6 +159,7 @@ def train_and_evaluate_model(
     losses_dev = []
     sampled_epochs = []
     best_f1 = -1 # so that a model is always kept, even if dev F1 stays 0
+    best_loss_dev = float('inf')
     best_model = None
     current_patience = patience
 
@@ -177,10 +178,20 @@ def train_and_evaluate_model(
                 f"Slot F1: {results_dev['total']['f']:.2f}; Intent Acc: {intent_res['accuracy']:.2f}"
             )
 
+            # the model is selected on dev slot F1, but patience is also reset when the dev loss
+            # improves: in the first epochs slot F1 stays ~0 (only "O" predicted) while the
+            # loss keeps decreasing, and stopping on F1 alone would end training there
+            improved = False
             f1 = results_dev['total']['f']
             if f1 > best_f1:
                 best_f1 = f1
                 best_model = copy.deepcopy(model).to('cpu')
+                improved = True
+            if losses_dev[-1] < best_loss_dev:
+                best_loss_dev = losses_dev[-1]
+                improved = True
+
+            if improved:
                 current_patience = patience
             else:
                 current_patience -= 1

@@ -46,13 +46,12 @@ if __name__ == "__main__":
     # baseline configuration, dropout disabled for experiments 0 and 1
     config = {"lr": 0.001, "d_model": 20, "n_heads": 1, "num_layers": 1, "ff_dim": 20, "dropout": 0.0}
     best_f1 = -1
-    lrs = [0.05, 0.01, 0.005, 0.001, 0.0005]
 
     # each step starts from the best config (and its dev slot F1) of the previous one: when
     # running one step per session, set config and best_f1 from the README of the previous step
 
     # 0: baseline, learning rate tuning
-    config, best_f1, _ = tune("lr", lrs, config, best_f1)
+    config, best_f1, _ = tune("lr", [0.05, 0.01, 0.005, 0.001, 0.0005], config, best_f1)
 
     # 1: hyperparameter tuning, one at a time (d_model, n_heads, num_layers, ff_dim)
     # config, best_f1, _ = tune("d_model", [32, 64, 128, 256, 512], config, best_f1)
