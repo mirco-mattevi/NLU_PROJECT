@@ -98,6 +98,7 @@ def eval_loop(data, criterion_slots, criterion_intents, model, lang):
             hyp_intents.extend(out_intents)
 
             # slot inference: decode each sequence back to (word, label) pairs for conll
+            slots[:, lang.pad_token, :] = float('-inf') # be sure not to assign pad as a label
             output_slots = torch.argmax(slots, dim=1) # Best slot label for each token
             for id_seq, seq in enumerate(output_slots):
                 # exclude the CLS token from each sentence
@@ -114,15 +115,7 @@ def eval_loop(data, criterion_slots, criterion_intents, model, lang):
                 ref_slots.append([(utterance[id_el], elem) for id_el, elem in enumerate(gt_slots)])
                 hyp_slots.append([(utterance[id_el], lang.id2slot[elem]) for id_el, elem in enumerate(to_decode)])
 
-    try:
-        results = evaluate(ref_slots, hyp_slots)
-    except Exception as ex:
-        # the model may predict a slot class absent in REF, which conll.evaluate rejects
-        print("Warning:", ex)
-        ref_s = set([x[1] for x in ref_slots])
-        hyp_s = set([x[1] for x in hyp_slots])
-        print(hyp_s.difference(ref_s))
-        results = {"total": {"f": 0}}
+    results = evaluate(ref_slots, hyp_slots)
 
     report_intent = classification_report(ref_intents, hyp_intents, zero_division=False, output_dict=True)
     return results, report_intent, loss_array
@@ -211,17 +204,19 @@ def train_and_evaluate_model(
     return best_model, best_f1, results_test, intent_test, history
 
 
-def save_model(path, model, lang):
+def save_model(path, model, lang, config):
     """
-    Saves the model weights together with the vocabularies needed to reload it.
+    Saves the model weights together with the configuration and vocabularies needed to reload it.
 
     Args:
         path: destination file.
         model: the GPT2 model.
         lang: utils.Lang instance whose word/slot/intent vocabularies are saved.
+        config: configuration of the model, dict with "lr" and the model.GPT2 kwargs.
     """
     saving_object = {
         "model": model.state_dict(),
+        "config": config,
         "w2id": lang.word2id,
         "slot2id": lang.slot2id,
         "intent2id": lang.intent2id,
@@ -386,7 +381,7 @@ def run_tuning(name, values, config, best_f1, lang, device, train_loader, dev_lo
         else:
             f.write(f"--> best {name}={best_config[name]} | {format_results(best_res)}\n")
     if best_res is not None:
-        save_model(os.path.join("bin", f"{name}{best_config[name]}.pt"), best_res["best_model"], lang)
+        save_model(os.path.join("bin", f"{name}{best_config[name]}.pt"), best_res["best_model"], lang, best_config)
 
     return best_config, best_f1, best_res
 

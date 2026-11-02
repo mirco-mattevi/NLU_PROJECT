@@ -20,8 +20,9 @@ if __name__ == "__main__":
 
     words = sum([x['utterance'].split() for x in train_raw], []) # get all words in the training set utterances
     corpus = train_raw + dev_raw + test_raw 
-    slots = set(sum([line['slots'].split() for line in corpus], [])) # get all slots in the corpus
-    intents = set([line['intent'] for line in corpus]) # get all intents in the corpus
+    # sorted: the order of a set of strings changes at every Python start, and so would the label ids
+    slots = sorted(set(sum([line['slots'].split() for line in corpus], []))) # get all slots in the corpus
+    intents = sorted(set([line['intent'] for line in corpus])) # get all intents in the corpus
     lang = Lang(words, intents, slots, pad_token=PAD_TOKEN, cutoff=0)
 
     train_dataset = IntentsAndSlots(train_raw, lang)

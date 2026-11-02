@@ -35,12 +35,37 @@
 - The best-dev model is kept and evaluated on the test set (the lab evaluated the last model).
 - The best F1 starts from -1, so a model is always kept even if the dev F1 never leaves 0.
 
+**Slot evaluation**
+
+- `pad` is excluded from the slot predictions in `eval_loop`. The loss already ignores pad positions,
+  but the output layer still has a score for that label, so the model can predict it for a real
+  token, especially in the first epochs. `conll.py` (unchanged from the lab) raises a `KeyError` on
+  this label when it is the first token of a sentence or follows a slot label.
+- The lab's `try/except` around `conll.evaluate` is removed. It set the F1 of the whole evaluation
+  to 0 on any error, while `conll.py` already handles slot classes absent from the references, so
+  any error left would be a real bug that should stop the run.
+
+**Label ids**
+
+- Slot and intent labels are sorted before assigning their ids (the lab uses a plain `set`). The
+  order of a set of strings changes at every Python start, so the ids and the results of the same
+  seed would change between sessions.
+
 **Outputs**
 
 - Every candidate appends a line to this README (dev/test slot F1, test intent accuracy, training
   time) and saves the loss curves of its best run in `plots/`.
-- The best model of each tuning step is saved in `bin/` together with the vocabularies needed to
-  reload it.
+- The best model of each tuning step is saved in `bin/` together with its configuration and the
+  vocabularies needed to reload it. The configuration is needed because a wrong `n_heads` would
+  load without errors (it does not change the shape of the weights) but give different results.
+
+**Changes made after the first results**
+
+- The `pad` exclusion, the removal of the `try/except` and the sorted labels were added after the
+  lr, d_model, n_heads, num_layers and ff_dim results below, which were obtained with the lab's
+  behavior. In the d_model to ff_dim runs the error occurred in two dev evaluations, both replaced
+  by later epochs, and in no test evaluation. For the first lr tuning no log is available, but the
+  small std of its test scores rules out a test score of 0.
 
 ## Results
 
