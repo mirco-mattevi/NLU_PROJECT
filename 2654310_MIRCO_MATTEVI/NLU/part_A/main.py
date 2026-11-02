@@ -44,31 +44,40 @@ if __name__ == "__main__":
         train_loader=train_loader, dev_loader=dev_loader, test_loader=test_loader,
     )
 
-    # baseline configuration, dropout disabled for experiments 0 and 1
-    # config = {"lr": 0.001, "d_model": 20, "n_heads": 1, "num_layers": 1, "ff_dim": 20, "dropout": 0.0}
-    # best_f1 = -1
+    LRS = [0.05, 0.01, 0.005, 0.001, 0.0005, 0.0001]
 
-    # after step 0: lr=0.01 instead of 0.05 (within one std, safer for larger models)
-    config = {"lr": 0.01, "d_model": 20, "n_heads": 1, "num_layers": 1, "ff_dim": 20, "dropout": 0.0}
-    best_f1 = 0.9286 # dev slot F1 of lr=0.01 in step 0
-
-    # each step starts from the best config (and its dev slot F1) of the previous one: when
-    # running one step per session, set config and best_f1 from the README of the previous step
+    # baseline configuration
+    config = {"lr": 0.001, "d_model": 20, "n_heads": 1, "num_layers": 1, "ff_dim": 20, "dropout": 0.0}
+    best_f1 = -1
 
     # 0: baseline, learning rate tuning
-    # config, best_f1, _ = tune("lr", [0.05, 0.01, 0.005, 0.001, 0.0005], config, best_f1)
+    config, best_f1, _ = tune("lr", LRS, config, best_f1)
 
     # 1: hyperparameter tuning, one at a time (d_model, n_heads, num_layers, ff_dim)
+    # after d_model and num_layers, the larger models are also trained with the 3 lr smaller than the current
     config, best_f1, _ = tune("d_model", [32, 64, 128, 256, 512], config, best_f1)
+    i = LRS.index(config["lr"])
+    lower_lrs = LRS[i + 1:i + 4]
+    for d_model in [128, 256, 512]:
+        candidate, f1, res = tune("lr", lower_lrs, {**config, "d_model": d_model}, best_f1)
+        if res is not None: # f1 has improved
+            config, best_f1 = candidate, f1
+
     config, best_f1, _ = tune("n_heads", [h for h in [2, 4, 8, 16] if config["d_model"] % h == 0], config, best_f1)
+
     config, best_f1, _ = tune("num_layers", [2, 3, 4, 6, 8], config, best_f1)
+    i = LRS.index(config["lr"])
+    lower_lrs = LRS[i + 1:i + 4]
+    for num_layers in [4, 6, 8]:
+        candidate, f1, res = tune("lr", lower_lrs, {**config, "num_layers": num_layers}, best_f1)
+        if res is not None:
+            config, best_f1 = candidate, f1
+
     config, best_f1, _ = tune("ff_dim", [m * config["d_model"] for m in [1, 2, 4, 8]], config, best_f1)
 
-    # readjust the learning rate for the larger model (current lr already measured)
-    # config, best_f1, _ = tune("lr", [lr for lr in lrs + [0.0001] if lr != config["lr"]], config, best_f1)
-
-    # with open("README.md", "a") as f:
-    #    f.write(f"\n--> best after experiment 1: {config} | dev slot F1: {best_f1:.4f}\n")
+    # readjust the learning rate for the final model: one value bigger and one smaller the current one
+    i = LRS.index(config["lr"])
+    config, best_f1, _ = tune("lr", LRS[max(i - 1, 0):i] + LRS[i + 1:i + 2], config, best_f1)
 
     # 2: dropout before the final output layers
     # TODO: requires the dropout layer marked as TODO in model.py to be implemented first.

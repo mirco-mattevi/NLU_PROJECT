@@ -8,7 +8,12 @@
   trained while the others stay fixed to the current best configuration, and a value is accepted
   only if it improves the mean dev slot F1 of the current best. It is called once per
   hyperparameter, in order: lr (baseline), d_model, n_heads, num_layers, ff_dim, and finally lr
-  again, since the lr found for the tiny baseline may not suit the larger model.
+  again (one value above and one below the current one), since the lr found for the tiny baseline
+  may not suit the larger model.
+- A lr that suits a small model can make a larger one unstable, which would make it look worse than
+  it is. So after d_model (128, 256, 512) and num_layers (4, 6, 8) these larger models are also
+  trained with the 2 lr below the current one. n_heads does not change the number of weights, and
+  ff_dim showed no instability, so they are not retested.
 - Every candidate is trained 5 times from scratch (`multiple_runs`) and results are reported as
   mean +- std, since single runs on ATIS are noisy.
 - Candidates are compared on the **dev** slot F1, the test scores are only reported (in the lab
