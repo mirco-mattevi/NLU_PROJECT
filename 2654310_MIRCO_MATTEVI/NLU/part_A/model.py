@@ -160,8 +160,7 @@ class GPT2(nn.Module):
         ])
 
         self.ln_f = nn.LayerNorm(d_model)
-        # TODO (exercise 2.A.2): self.dropout = nn.Dropout(dropout), applied to
-        # `x` right after self.ln_f, before computing slot_out/intent_out.
+        self.dropout = nn.Dropout(dropout) # applied before the output layers
 
         # slot outputs (sequence labeling): one slot label per input token
         self.slot_out = nn.Linear(d_model, slots_size)
@@ -201,7 +200,7 @@ class GPT2(nn.Module):
             x = block(x, mask)
 
         x = self.ln_f(x) # normalize
-        # TODO (exercise 2.A.2): x = self.dropout(x)
+        x = self.dropout(x)
 
         slots = self.slot_out(x)
 

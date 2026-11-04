@@ -142,3 +142,22 @@ ff_dim=128 | dev slot F1: 0.9346 +- 0.0035 | test slot F1: 0.8866 +- 0.0024 | te
 lr=0.01 | dev slot F1: 0.9292 +- 0.0085 | test slot F1: 0.8893 +- 0.0091 | test intent acc: 0.9039 +- 0.0172 | 1.5 min
 lr=0.001 | dev slot F1: 0.9365 +- 0.0033 | test slot F1: 0.8808 +- 0.0061 | test intent acc: 0.9093 +- 0.0123 | 3.4 min
 --> no lr improves the dev slot F1, kept lr=0.005
+
+------ final lr tuning ------
+[lr tuning] starting from {'lr': 0.005, 'd_model': 64, 'n_heads': 1, 'num_layers': 1, 'ff_dim': 20, 'dropout': 0.0} (dev slot F1 to beat: 0.9429)
+lr=0.01 | dev slot F1: 0.9396 +- 0.0045 | test slot F1: 0.8915 +- 0.0026 | test intent acc: 0.9230 +- 0.0047 | 1.8 min
+lr=0.005 | dev slot F1: 0.9357 +- 0.0072 | test slot F1: 0.8837 +- 0.0107 | test intent acc: 0.9283 +- 0.0089 | 2.1 min
+lr=0.001 | dev slot F1: 0.9177 +- 0.0054 | test slot F1: 0.8676 +- 0.0062 | test intent acc: 0.9046 +- 0.0158 | 4.7 min
+--> no lr improves the dev slot F1, kept lr=0.005
+
+[lr tuning] starting from {'lr': 0.005, 'd_model': 128, 'n_heads': 1, 'num_layers': 2, 'ff_dim': 20, 'dropout': 0.0} (dev slot F1 to beat: 0.9429)
+lr=0.001 | dev slot F1: 0.9229 +- 0.0083 | test slot F1: 0.8703 +- 0.0056 | test intent acc: 0.9115 +- 0.0086 | 2.9 min
+--> no lr improves the dev slot F1, kept lr=0.005
+
+[lr tuning] starting from {'lr': 0.005, 'd_model': 256, 'n_heads': 1, 'num_layers': 1, 'ff_dim': 20, 'dropout': 0.0} (dev slot F1 to beat: 0.9429)
+lr=0.0005 | dev slot F1: 0.9284 +- 0.0054 | test slot F1: 0.8781 +- 0.0045 | test intent acc: 0.9122 +- 0.0133 | 3.2 min
+--> no lr improves the dev slot F1, kept lr=0.005
+
+[lr tuning] starting from {'lr': 0.005, 'd_model': 512, 'n_heads': 1, 'num_layers': 1, 'ff_dim': 20, 'dropout': 0.0} (dev slot F1 to beat: 0.9429)
+lr=0.0005 | dev slot F1: 0.9383 +- 0.0018 | test slot F1: 0.8818 +- 0.0049 | test intent acc: 0.9091 +- 0.0150 | 3.7 min
+--> no lr improves the dev slot F1, kept lr=0.005

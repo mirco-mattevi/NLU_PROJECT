@@ -85,16 +85,22 @@ if __name__ == "__main__":
     
     # extra sweep: models that were only trained with an lr too high for them, or whose
     # score was still improving at the smallest lr tried
-    extra_sweep = [
-        ("d_model", 64, [0.01, 0.005, 0.001]),
-        ("num_layers", 2, [0.001]),
-        ("d_model", 256, [0.0005]),
-        ("d_model", 512, [0.0005]),
-    ]
-    for name, value, lrs in extra_sweep:
-        candidate, f1, res = tune("lr", lrs, {**config, name: value}, best_f1)
-        if res is not None: # f1 has improved
-            config, best_f1 = candidate, f1
+    # extra_sweep = [
+    #     ("d_model", 64, [0.01, 0.005, 0.001]),
+    #     ("num_layers", 2, [0.001]),
+    #     ("d_model", 256, [0.0005]),
+    #     ("d_model", 512, [0.0005]),
+    # ]
+    # for name, value, lrs in extra_sweep:
+    #     candidate, f1, res = tune("lr", lrs, {**config, name: value}, best_f1)
+    #     if res is not None: # f1 has improved
+    #         config, best_f1 = candidate, f1
 
     # 2: dropout before the final output layers
-    # TODO: requires the dropout layer marked as TODO in model.py to be implemented first.
+    # 0.0 retrains the current best model, so it is saved in bin/ even if no dropout wins
+    config, best_f1, _ = tune("dropout", [0.0, 0.1, 0.2, 0.3, 0.5], config, -1)
+
+    # readjust the lr only if dropout was accepted
+    if config["dropout"] > 0:
+        i = LRS.index(config["lr"])
+        config, best_f1, _ = tune("lr", LRS[i - 1:i] + LRS[i + 1:i + 2], config, best_f1)
